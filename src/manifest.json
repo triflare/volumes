@@ -1,9 +1,9 @@
 {
-  "name": "My TurboWarp Extension",
-  "id": "myTurboWarpExtension",
-  "version": "1.0.1",
-  "description": "A custom extension for TurboWarp",
-  "author": "Your Name",
-  "license": "LSL-1.0",
-  "url": "https://example.com/my-extension"
+  "name": "Volumes",
+  "id": "volumes",
+  "version": "1.0.0",
+  "description": "OPFS-powered virtual file system extension for TurboWarp",
+  "author": "triflare",
+  "license": "GPL-3.0-only",
+  "url": "https://github.com/triflare/volumes"
 }

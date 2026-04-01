@@ -1,73 +1,110 @@
-/* global __mint_getAsset */
 /**
- * Core Extension Module
- * This is the main extension class that Scratch will register
- * Load this first (01-* naming convention)
+ * Core Extension Module — Volumes
+ * OPFS-powered virtual file system extension for TurboWarp.
+ * Load this first (01-* naming convention).
  */
 
-// Import colorBlock and sayHello from 02-example-module.js
-import { colorBlock, sayHelloImpl } from './02-example-module.js';
+import {
+  writeFileImpl,
+  readFileImpl,
+  deleteFileImpl,
+  fileExistsImpl,
+  listFilesImpl,
+  makeDirImpl,
+  deleteDirImpl,
+} from './02-volumes.js';
 
-class TurboWarpExtension {
-  constructor() {
-    this.runtime = null;
-  }
-
+class VolumesExtension {
   /**
-   * Return extension info for Scratch
-   * This method is required by the Scratch extension protocol
+   * Return extension info for Scratch.
+   * This method is required by the Scratch extension protocol.
    */
   getInfo() {
     return {
-      id: 'myTurboWarpExtension',
-      name: Scratch.translate('My Extension'),
-      color1: '#4CAF50',
-      color2: '#45a049',
-      color3: '#3d8b40',
-      menuIconURI:
-        (typeof __mint_getAsset === 'function' && __mint_getAsset('icons/menu.png')) || '',
-      blockIconURI:
-        (typeof __mint_getAsset === 'function' && __mint_getAsset('icons/block.png')) || '',
+      id: 'volumes',
+      name: Scratch.translate('Volumes'),
+      color1: '#3d7eba',
+      color2: '#2d6ba8',
+      color3: '#1e5a99',
       blocks: [
         {
-          opcode: 'helloWorld',
-          blockType: 'reporter',
-          text: Scratch.translate('hello world'),
-        },
-        {
-          opcode: 'add',
-          blockType: 'reporter',
-          text: Scratch.translate('[A] + [B]'),
+          opcode: 'writeFile',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('write [CONTENT] to [PATH] in OPFS'),
           arguments: {
-            A: {
-              type: 'number',
-              defaultValue: 0,
+            CONTENT: {
+              type: Scratch.ArgumentType.STRING,
+              defaultValue: 'hello',
             },
-            B: {
-              type: 'number',
-              defaultValue: 1,
+            PATH: {
+              type: Scratch.ArgumentType.STRING,
+              defaultValue: 'file.txt',
             },
           },
         },
         {
-          opcode: 'colorBlock',
-          blockType: 'reporter',
-          text: Scratch.translate('selected color [COLOR]'),
+          opcode: 'readFile',
+          blockType: Scratch.BlockType.REPORTER,
+          text: Scratch.translate('read [PATH] from OPFS'),
           arguments: {
-            COLOR: {
-              type: 'color',
-              defaultValue: '#FF0000',
+            PATH: {
+              type: Scratch.ArgumentType.STRING,
+              defaultValue: 'file.txt',
             },
           },
         },
         {
-          opcode: 'sayHello',
-          blockType: 'reporter',
-          text: Scratch.translate('say hello to [NAME]'),
+          opcode: 'deleteFile',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('delete [PATH] from OPFS'),
           arguments: {
-            NAME: {
-              type: 'string',
-              defaultValue: 'world',
+            PATH: {
+              type: Scratch.ArgumentType.STRING,
+              defaultValue: 'file.txt',
+            },
+          },
+        },
+        {
+          opcode: 'fileExists',
+          blockType: Scratch.BlockType.BOOLEAN,
+          text: Scratch.translate('[PATH] exists in OPFS'),
+          arguments: {
+            PATH: {
+              type: Scratch.ArgumentType.STRING,
+              defaultValue: 'file.txt',
+            },
+          },
+        },
+        {
+          opcode: 'listFiles',
+          blockType: Scratch.BlockType.REPORTER,
+          text: Scratch.translate('list files in [DIR] in OPFS'),
+          arguments: {
+            DIR: {
+              type: Scratch.ArgumentType.STRING,
+              defaultValue: '/',
+            },
+          },
+        },
+        {
+          opcode: 'makeDir',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('create directory [DIR] in OPFS'),
+          arguments: {
+            DIR: {
+              type: Scratch.ArgumentType.STRING,
+              defaultValue: 'myfolder',
+            },
+          },
+        },
+        {
+          opcode: 'deleteDir',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('delete directory [DIR] from OPFS'),
+          arguments: {
+            DIR: {
+              type: Scratch.ArgumentType.STRING,
+              defaultValue: 'myfolder',
             },
           },
         },
@@ -76,33 +113,54 @@ class TurboWarpExtension {
   }
 
   /**
-   * Block implementation: Say Hello (delegates to 02-example-module.js)
+   * Block implementation: Write file (delegates to 02-volumes.js)
    */
-  sayHello(args) {
-    return sayHelloImpl(args);
+  writeFile(args) {
+    return writeFileImpl(args);
   }
 
   /**
-   * Block implementation: Hello World
+   * Block implementation: Read file (delegates to 02-volumes.js)
    */
-  helloWorld() {
-    return 'hello world!';
+  readFile(args) {
+    return readFileImpl(args);
   }
 
   /**
-   * Block implementation: Add
+   * Block implementation: Delete file (delegates to 02-volumes.js)
    */
-  add(args) {
-    return Number(args.A) + Number(args.B);
+  deleteFile(args) {
+    return deleteFileImpl(args);
   }
 
   /**
-   * Block implementation: Color Block (delegates to 02-example-module.js)
+   * Block implementation: File exists (delegates to 02-volumes.js)
    */
-  colorBlock(args) {
-    return colorBlock(args);
+  fileExists(args) {
+    return fileExistsImpl(args);
+  }
+
+  /**
+   * Block implementation: List files (delegates to 02-volumes.js)
+   */
+  listFiles(args) {
+    return listFilesImpl(args);
+  }
+
+  /**
+   * Block implementation: Make directory (delegates to 02-volumes.js)
+   */
+  makeDir(args) {
+    return makeDirImpl(args);
+  }
+
+  /**
+   * Block implementation: Delete directory (delegates to 02-volumes.js)
+   */
+  deleteDir(args) {
+    return deleteDirImpl(args);
   }
 }
 
 // Register the extension
-Scratch.extensions.register(new TurboWarpExtension());
+Scratch.extensions.register(new VolumesExtension());

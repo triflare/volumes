@@ -1,68 +1,45 @@
 /**
- * Unit tests for src/01-core.js (TurboWarpExtension class)
+ * Unit tests for src/01-core.js (VolumesExtension class)
  *
- * The Scratch global mock must be installed before the core module is imported,
- * because 01-core.js calls Scratch.extensions.register() at module load time.
- * The mock captures the registered instance so the class methods can be tested.
+ * The Scratch global mock and the OPFS mock must both be installed before the
+ * core module is imported, because 01-core.js calls Scratch.extensions.register()
+ * at module load time.  The Scratch mock captures the registered instance so
+ * that class methods can be exercised directly.
  */
 
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { installScratchMock } from './helpers/mock-scratch.js';
+import { createMockOpfs } from './helpers/mock-opfs.js';
 
-// Install the mock and capture the registered extension instance.
+// Install the Scratch mock and capture the registered extension instance.
 const { mock } = installScratchMock();
 let extension;
 mock.extensions.register = instance => {
   extension = instance;
 };
 
+// Install the in-memory OPFS mock so navigator.storage is available.
+const { install } = createMockOpfs();
+const restore = install();
+after(restore);
+
 // Top-level await: load the core module so registration fires.
 await import('../src/01-core.js');
 
-describe('TurboWarpExtension — registration', () => {
+describe('VolumesExtension — registration', () => {
   it('registers an extension instance with Scratch', () => {
     assert.ok(extension, 'Scratch.extensions.register should have been called');
   });
 });
 
-describe('TurboWarpExtension — helloWorld()', () => {
-  it('returns "hello world!"', () => {
-    assert.equal(extension.helloWorld(), 'hello world!');
-  });
-});
-
-describe('TurboWarpExtension — add()', () => {
-  it('adds two numbers', () => {
-    assert.equal(extension.add({ A: 3, B: 4 }), 7);
+describe('VolumesExtension — getInfo()', () => {
+  it('returns id "volumes"', () => {
+    assert.equal(extension.getInfo().id, 'volumes');
   });
 
-  it('coerces string arguments to numbers', () => {
-    assert.equal(extension.add({ A: '5', B: '2' }), 7);
-  });
-
-  it('adds 0 + 1 = 1', () => {
-    assert.equal(extension.add({ A: 0, B: 1 }), 1);
-  });
-});
-
-describe('TurboWarpExtension — sayHello()', () => {
-  it('delegates to sayHelloImpl and returns a greeting', () => {
-    assert.equal(extension.sayHello({ NAME: 'World' }), 'Hello, World!');
-  });
-});
-
-describe('TurboWarpExtension — colorBlock()', () => {
-  it('returns the selected color string', () => {
-    assert.equal(extension.colorBlock({ COLOR: '#FF0000' }), 'Selected color: #FF0000');
-  });
-});
-
-describe('TurboWarpExtension — getInfo()', () => {
-  it('returns an object with an id and name', () => {
-    const info = extension.getInfo();
-    assert.equal(typeof info.id, 'string');
-    assert.equal(typeof info.name, 'string');
+  it('returns a name string', () => {
+    assert.equal(typeof extension.getInfo().name, 'string');
   });
 
   it('exposes a non-empty blocks array', () => {
@@ -72,9 +49,63 @@ describe('TurboWarpExtension — getInfo()', () => {
 
   it('declares all expected block opcodes', () => {
     const opcodes = extension.getInfo().blocks.map(b => b.opcode);
-    assert.ok(opcodes.includes('helloWorld'), 'missing opcode: helloWorld');
-    assert.ok(opcodes.includes('add'), 'missing opcode: add');
-    assert.ok(opcodes.includes('colorBlock'), 'missing opcode: colorBlock');
-    assert.ok(opcodes.includes('sayHello'), 'missing opcode: sayHello');
+    for (const op of [
+      'writeFile',
+      'readFile',
+      'deleteFile',
+      'fileExists',
+      'listFiles',
+      'makeDir',
+      'deleteDir',
+    ]) {
+      assert.ok(opcodes.includes(op), `missing opcode: ${op}`);
+    }
+  });
+});
+
+describe('VolumesExtension — writeFile() / readFile()', () => {
+  it('writes content and reads it back', async () => {
+    await extension.writeFile({ PATH: 'core-rw.txt', CONTENT: 'hello world' });
+    assert.equal(await extension.readFile({ PATH: 'core-rw.txt' }), 'hello world');
+  });
+
+  it('readFile returns empty string for a missing file', async () => {
+    assert.equal(await extension.readFile({ PATH: 'no-such-file.txt' }), '');
+  });
+});
+
+describe('VolumesExtension — fileExists()', () => {
+  it('returns true for an existing file', async () => {
+    await extension.writeFile({ PATH: 'core-exists.txt', CONTENT: 'yes' });
+    assert.equal(await extension.fileExists({ PATH: 'core-exists.txt' }), true);
+  });
+
+  it('returns false for a non-existing file', async () => {
+    assert.equal(await extension.fileExists({ PATH: 'core-ghost.txt' }), false);
+  });
+});
+
+describe('VolumesExtension — deleteFile()', () => {
+  it('removes the file so it can no longer be read', async () => {
+    await extension.writeFile({ PATH: 'core-del.txt', CONTENT: 'bye' });
+    await extension.deleteFile({ PATH: 'core-del.txt' });
+    assert.equal(await extension.readFile({ PATH: 'core-del.txt' }), '');
+  });
+});
+
+describe('VolumesExtension — makeDir() / listFiles()', () => {
+  it('creates a directory visible in the root listing', async () => {
+    await extension.makeDir({ DIR: 'core-mydir' });
+    const list = JSON.parse(await extension.listFiles({ DIR: '/' }));
+    assert.ok(list.includes('core-mydir'), 'created directory should appear in listing');
+  });
+});
+
+describe('VolumesExtension — deleteDir()', () => {
+  it('removes a directory from the root listing', async () => {
+    await extension.makeDir({ DIR: 'core-rmdir' });
+    await extension.deleteDir({ DIR: 'core-rmdir' });
+    const list = JSON.parse(await extension.listFiles({ DIR: '/' }));
+    assert.ok(!list.includes('core-rmdir'), 'deleted directory should not appear in listing');
   });
 });
