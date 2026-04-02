@@ -26,7 +26,7 @@ class kxVolumes {
 
   getInfo() {
     return {
-      id: 'kxVolumes',
+      id: 'kx_volumes',
       name: Scratch.translate('Volumes'),
       menuIconURI: __ASSET__('icon.svg'),
       color1: '#63cf7a',
@@ -706,6 +706,11 @@ class kxVolumes {
         control: true,
       };
 
+      if (this.volumes[volName]) {
+        this.lastError = JSON.stringify({ status: 'success' });
+        return this.lastError;
+      }
+
       if (type === 'RAM') {
         this.volumes[volName] = {
           type: 'RAM',
@@ -1375,17 +1380,17 @@ class kxVolumes {
           delete: true,
           control: true,
         };
-        // Seed OPFS root permissions so remounts and restores persist root policy
-        if (this.volumes[volName].type === 'OPFS') {
-          const metaKey = `${volName}`;
-          this._opfsPerms.set(metaKey, this.volumes[volName].perms);
-        }
 
         result = await this.formatVolume({ VOL: volName });
         status = JSON.parse(result);
         if (status.status !== 'success') {
           if (this.volumes[volName]) this.volumes[volName].lastError = result;
           throw new Error('Failed to format volume: ' + status.message);
+        }
+
+        if (this.volumes[volName].type === 'OPFS') {
+          const metaKey = `${volName}`;
+          this._opfsPerms.set(metaKey, this.volumes[volName].perms);
         }
 
         const processNode = async (name, nodeData, currentPath) => {

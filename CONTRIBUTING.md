@@ -7,7 +7,7 @@
 3. Node.js and `npm` installed
 4. Working knowledge of JavaScript, YAML, or JSON
 
-## Understanding Mint's Build Script
+## Understanding Volumes' Build Script (Mint tooling)
 
 Mint's build script is something called a "bundler", which means it concatenates _(or combines)_ a set of files into one. In Mint's case, the files it bundles are called "modules" or "ES modules". If you know about Webpack, you'll know exactly what we mean.
 

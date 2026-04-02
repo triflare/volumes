@@ -1,6 +1,6 @@
 {
   "name": "Volumes",
-  "id": "triflareVolumes",
+  "id": "kx_volumes",
   "version": "1.0.0",
   "description": "Custom OPFS-powered virtual file system extension for TurboWarp & other Scratch mods.",
   "author": "Triflare",

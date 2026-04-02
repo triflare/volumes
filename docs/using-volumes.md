@@ -9,7 +9,7 @@ When the extension loads, you usually have at least one volume ready to use:
 - `tmp://` is a RAM volume. It is temporary and resets when the page reloads.
 - `fs://` is an OPFS volume when the browser supports it. It is persistent and keeps its contents after reloads.
 
-If a volume name does not end in `://`, the extension adds it for you.
+If a standalone volume name does not end in `://`, the extension adds it for you. Path-based blocks still require the `://` suffix and reject inputs that do not include it.
 
 ## Common block flow
 

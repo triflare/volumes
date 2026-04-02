@@ -9,7 +9,7 @@
 
 > [!INFO]
 >
-> "Pre-mint" qualifies Volumes before it was ported to Mint's tooling, and "RubyFS" was Volumes prior to the remake that made it seperate from rxFS.
+> "Pre-mint" qualifies Volumes before it was ported to Mint's tooling, and "RubyFS" was Volumes prior to the remake that made it separate from rxFS.
 
 ## Reporting a Security Vulnerability
 

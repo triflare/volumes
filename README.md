@@ -16,7 +16,7 @@ Imagine if Windows and Linux's file systems had a date, talked about their advan
 
 ## Documentation
 
-If you want a more practical guide, start with the docs in [docs/example.md](docs/example.md).
+If you want a more practical guide, start with the docs in [docs/toc.md](docs/toc.md).
 
 - [Using Volumes](docs/using-volumes.md)
 - [Block Reference](docs/reference.md)
