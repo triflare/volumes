@@ -226,9 +226,9 @@ class kxVolumes {
       perms: { ...defaultPerms },
     };
 
-    if (navigator.storage && navigator.storage.getDirectory) {
+    if (this._supportsOPFS()) {
       try {
-        const root = await navigator.storage.getDirectory();
+        const root = await this._getOPFSRoot();
         const fsHandle = await root.getDirectoryHandle('fs', { create: true });
         const { size, count } = await this._getDirectoryStats(fsHandle);
         this.volumes['fs://'] = {
@@ -252,6 +252,22 @@ class kxVolumes {
   }
 
   // --- Utility Functions ---
+  _supportsOPFS() {
+    return (
+      typeof navigator !== 'undefined' &&
+      !!navigator.storage &&
+      typeof navigator.storage.getDirectory === 'function'
+    );
+  }
+
+  async _getOPFSRoot() {
+    if (!this._supportsOPFS()) {
+      throw new Error('INTERNAL_ERROR: OPFS unsupported');
+    }
+
+    return navigator.storage.getDirectory();
+  }
+
   _handleError(e) {
     let code = 'INTERNAL_ERROR';
     const message = e.message || String(e);
@@ -508,7 +524,7 @@ class kxVolumes {
     // Only persist for OPFS volumes
     if (!this.volumes[volName] || this.volumes[volName].type !== 'OPFS') return;
 
-    const root = await navigator.storage.getDirectory();
+    const root = await this._getOPFSRoot();
     const dirName = volName.replace('://', '');
     const volHandle = await root.getDirectoryHandle(dirName, { create: true });
 
@@ -545,7 +561,7 @@ class kxVolumes {
     if (!this.volumes[volName] || this.volumes[volName].type !== 'OPFS') return;
 
     try {
-      const root = await navigator.storage.getDirectory();
+      const root = await this._getOPFSRoot();
       const dirName = volName.replace('://', '');
       const volHandle = await root.getDirectoryHandle(dirName, { create: false });
 
@@ -601,7 +617,7 @@ class kxVolumes {
   }
 
   async _resolveOPFSNode(volName, relPath, options = {}) {
-    const root = await navigator.storage.getDirectory();
+    const root = await this._getOPFSRoot();
     const dirName = volName.replace('://', '');
     let current = await root.getDirectoryHandle(dirName, { create: true });
 
@@ -701,9 +717,9 @@ class kxVolumes {
           perms: { ...defaultPerms },
         };
       } else if (type === 'OPFS') {
-        if (!navigator.storage || !navigator.storage.getDirectory)
+        if (!this._supportsOPFS())
           throw new Error('INTERNAL_ERROR: OPFS unsupported');
-        const root = await navigator.storage.getDirectory();
+        const root = await this._getOPFSRoot();
         const dirName = volName.replace('://', '');
         const handle = await root.getDirectoryHandle(dirName, { create: true });
         const { size, count } = await this._getDirectoryStats(handle);
@@ -776,7 +792,7 @@ class kxVolumes {
         vol.size = 0;
         vol.fileCount = 0;
       } else {
-        const root = await navigator.storage.getDirectory();
+        const root = await this._getOPFSRoot();
         const dirName = volName.replace('://', '');
         await root.removeEntry(dirName, { recursive: true });
         await root.getDirectoryHandle(dirName, { create: true });
@@ -1128,9 +1144,9 @@ class kxVolumes {
       } else {
         const node = !relPath
           ? {
-              handle: await (
-                await navigator.storage.getDirectory()
-              ).getDirectoryHandle(volName.replace('://', '')),
+              handle: await (await this._getOPFSRoot()).getDirectoryHandle(
+                volName.replace('://', '')
+              ),
             }
           : await this._resolveOPFSNode(volName, relPath);
         if (node.type && node.type !== 'directory')
@@ -1175,7 +1191,6 @@ class kxVolumes {
           try {
             const dirHandle = await parent.getDirectoryHandle(name);
             const stats = await this._getDirectoryStats(dirHandle);
-            sizeFreed = stats.size;
             filesFreed = stats.count;
           } catch (_e2) {
             throw new Error('NOT_FOUND: Path does not exist', { cause: _e2 });
@@ -1284,9 +1299,9 @@ class kxVolumes {
         if (vol.type === 'RAM') {
           tree = serializeRAMNode(vol.root);
         } else {
-          const rootHandle = await (
-            await navigator.storage.getDirectory()
-          ).getDirectoryHandle(volName.replace('://', ''));
+          const rootHandle = await (await this._getOPFSRoot()).getDirectoryHandle(
+            volName.replace('://', '')
+          );
           tree = await serializeOPFSNode(rootHandle, '', volName);
           tree.perms = vol.perms; // Root perms
         }
