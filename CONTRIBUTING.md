@@ -1,8 +1,4 @@
-# Contributing to Mint
-
-> [!INFO]
->
-> If you're reading this and you've just forked this repository, you may want to replace all mentions of the Mint toolchain with your extension's name.
+# Contributing to Volumes
 
 ## What You'll Need
 
@@ -11,7 +7,7 @@
 3. Node.js and `npm` installed
 4. Working knowledge of JavaScript, YAML, or JSON
 
-## Understanding the Build Script
+## Understanding Mint's Build Script
 
 Mint's build script is something called a "bundler", which means it concatenates _(or combines)_ a set of files into one. In Mint's case, the files it bundles are called "modules" or "ES modules". If you know about Webpack, you'll know exactly what we mean.
 
