@@ -2,10 +2,10 @@
 
 ## Supported Versions
 
-| Volumes version          | Supported? |
-| --------------------- | ---------- |
-| `1.x.x`               | &check;    |
-| Pre-mint/RubyFS       | &cross;    |
+| Volumes version | Supported? |
+| --------------- | ---------- |
+| `1.x.x`         | &check;    |
+| Pre-mint/RubyFS | &cross;    |
 
 > [!INFO]
 >
