@@ -12,7 +12,7 @@
  * - Size and file count limits
  */
 
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { installScratchMock } from './helpers/mock-scratch.js';
 
@@ -534,7 +534,7 @@ describe('kxVolumes — path check operations', () => {
     await extension.setPermission({ PATH: vol, PERM: 'view', VALUE: 'deny' });
     
     // View permission affects listing but not existence checks
-    const exists = await extension.pathCheck({
+    const _exists = await extension.pathCheck({
       PATH: vol,
       CONDITION: 'exists'
     });
@@ -1090,7 +1090,7 @@ describe('kxVolumes — error handling', () => {
   });
 
   it('handles not found errors', async () => {
-    const result = await extension.fileRead({
+    const _result = await extension.fileRead({
       PATH: 'error_test://missing/deep/file.txt',
       FORMAT: 'text'
     });
@@ -1108,7 +1108,7 @@ describe('kxVolumes — error handling', () => {
     await extension.fileWrite({ MODE: 'write', STRING: 'secret', PATH: file });
     await extension.setPermission({ PATH: file, PERM: 'read', VALUE: 'deny' });
     
-    const content = await extension.fileRead({
+    const _content = await extension.fileRead({
       PATH: file,
       FORMAT: 'text'
     });
@@ -1181,7 +1181,7 @@ describe('kxVolumes — path parsing', () => {
       PATH: vol + 'cached.txt'
     });
     
-    const content1 = await extension.fileRead({
+    const _content1 = await extension.fileRead({
       PATH: vol + 'cached.txt',
       FORMAT: 'text'
     });
@@ -1356,7 +1356,7 @@ describe('kxVolumes — edge cases', () => {
   });
 
   it('handles whitespace in volume names', async () => {
-    const result = await extension.mountAs({
+    const _result = await extension.mountAs({
       VOL: 'vol with spaces',
       TYPE: 'RAM'
     });
