@@ -1,5 +1,11 @@
-# Example documentation
+# Documentation Index
 
-Put your extension's documentation here. It will automatically be checked by CSpell.
+This folder contains the user-facing documentation for Volumes.
 
-Don't be afraid to make more Markdown files in this directory!
+Start with these pages:
+
+- [Using Volumes](using-volumes.md)
+- [Block Reference](reference.md)
+- [Advanced Notes](advanced.md)
+
+If you want to see the extension in context, the main project overview is in the [README](../README.md).

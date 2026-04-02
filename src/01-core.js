@@ -1,5 +1,4 @@
 class kxVolumes {
-
   /* global __ASSET__ */
 
   constructor() {
@@ -28,7 +27,7 @@ class kxVolumes {
   getInfo() {
     return {
       id: 'kxVolumes',
-      name: Scratch.translate("Volumes"),
+      name: Scratch.translate('Volumes'),
       menuIconURI: __ASSET__('icon.svg'),
       color1: '#63cf7a',
       color2: '#42bd5b',
@@ -36,7 +35,7 @@ class kxVolumes {
         {
           opcode: 'mountAs',
           blockType: Scratch.BlockType.COMMAND,
-          text: Scratch.translate("mount [VOL] as [TYPE]"),
+          text: Scratch.translate('mount [VOL] as [TYPE]'),
           arguments: {
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'myfs://' },
             TYPE: { type: Scratch.ArgumentType.STRING, menu: 'volTypes' },
@@ -45,7 +44,7 @@ class kxVolumes {
         {
           opcode: 'formatVolume',
           blockType: Scratch.BlockType.COMMAND,
-          text: Scratch.translate("format volume [VOL]"),
+          text: Scratch.translate('format volume [VOL]'),
           arguments: {
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
           },
@@ -53,13 +52,13 @@ class kxVolumes {
         {
           opcode: 'listVolumes',
           blockType: Scratch.BlockType.REPORTER,
-          text: Scratch.translate("list mounted volumes"),
+          text: Scratch.translate('list mounted volumes'),
           disableMonitor: false,
         },
         {
           opcode: 'setSizeLimit',
           blockType: Scratch.BlockType.COMMAND,
-          text: Scratch.translate("set size limit of [VOL] to [LIMIT] bytes"),
+          text: Scratch.translate('set size limit of [VOL] to [LIMIT] bytes'),
           arguments: {
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
             LIMIT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 10485760 },
@@ -68,7 +67,7 @@ class kxVolumes {
         {
           opcode: 'setFileCountLimit',
           blockType: Scratch.BlockType.COMMAND,
-          text: Scratch.translate("set file count limit of [VOL] to [LIMIT]"),
+          text: Scratch.translate('set file count limit of [VOL] to [LIMIT]'),
           arguments: {
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
             LIMIT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 10000 },
@@ -76,11 +75,11 @@ class kxVolumes {
         },
 
         // --- File Operations ---
-        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate("File Operations") },
+        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('File Operations') },
         {
           opcode: 'fileWrite',
           blockType: Scratch.BlockType.COMMAND,
-          text: Scratch.translate("[MODE] [STRING] to [PATH]"),
+          text: Scratch.translate('[MODE] [STRING] to [PATH]'),
           arguments: {
             MODE: { type: Scratch.ArgumentType.STRING, menu: 'writeMode' },
             STRING: { type: Scratch.ArgumentType.STRING, defaultValue: 'Hello World' },
@@ -90,7 +89,7 @@ class kxVolumes {
         {
           opcode: 'fileRead',
           blockType: Scratch.BlockType.REPORTER,
-          text: Scratch.translate("read [PATH] as [FORMAT]"),
+          text: Scratch.translate('read [PATH] as [FORMAT]'),
           arguments: {
             PATH: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://test.txt' },
             FORMAT: { type: Scratch.ArgumentType.STRING, menu: 'readFormat' },
@@ -99,18 +98,18 @@ class kxVolumes {
         {
           opcode: 'deletePath',
           blockType: Scratch.BlockType.COMMAND,
-          text: Scratch.translate("delete [PATH]"),
+          text: Scratch.translate('delete [PATH]'),
           arguments: {
             PATH: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://test.txt' },
           },
         },
 
         // --- Path & Directory ---
-        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate("Path & Directory") },
+        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Path & Directory') },
         {
           opcode: 'listFiles',
           blockType: Scratch.BlockType.REPORTER,
-          text: Scratch.translate("list [DEPTH] files in [PATH]"),
+          text: Scratch.translate('list [DEPTH] files in [PATH]'),
           arguments: {
             DEPTH: { type: Scratch.ArgumentType.STRING, menu: 'listDepth' },
             PATH: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
@@ -119,7 +118,7 @@ class kxVolumes {
         {
           opcode: 'pathCheck',
           blockType: Scratch.BlockType.BOOLEAN,
-          text: Scratch.translate("[PATH] [CONDITION]?"),
+          text: Scratch.translate('[PATH] [CONDITION]?'),
           arguments: {
             PATH: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://test.txt' },
             CONDITION: { type: Scratch.ArgumentType.STRING, menu: 'pathCondition' },
@@ -128,7 +127,7 @@ class kxVolumes {
         {
           opcode: 'joinPaths',
           blockType: Scratch.BlockType.REPORTER,
-          text: Scratch.translate("join path [P1] and [P2]"),
+          text: Scratch.translate('join path [P1] and [P2]'),
           arguments: {
             P1: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://folder' },
             P2: { type: Scratch.ArgumentType.STRING, defaultValue: 'file.txt' },
@@ -136,11 +135,11 @@ class kxVolumes {
         },
 
         // --- Permissions ---
-        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate("Permissions") },
+        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Permissions') },
         {
           opcode: 'setPermission',
           blockType: Scratch.BlockType.COMMAND,
-          text: Scratch.translate("set [PERM] permission of [PATH] to [VALUE]"),
+          text: Scratch.translate('set [PERM] permission of [PATH] to [VALUE]'),
           arguments: {
             PERM: { type: Scratch.ArgumentType.STRING, menu: 'permissionTypes' },
             PATH: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://test.txt' },
@@ -150,7 +149,7 @@ class kxVolumes {
         {
           opcode: 'checkPermission',
           blockType: Scratch.BlockType.BOOLEAN,
-          text: Scratch.translate("[PATH] allows [PERM]?"),
+          text: Scratch.translate('[PATH] allows [PERM]?'),
           arguments: {
             PATH: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://test.txt' },
             PERM: { type: Scratch.ArgumentType.STRING, menu: 'permissionTypes' },
@@ -158,11 +157,11 @@ class kxVolumes {
         },
 
         // --- Import & Export ---
-        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate("Import & Export") },
+        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Import & Export') },
         {
           opcode: 'exportVolume',
           blockType: Scratch.BlockType.REPORTER,
-          text: Scratch.translate("export [VOL] as JSON"),
+          text: Scratch.translate('export [VOL] as JSON'),
           arguments: {
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
           },
@@ -170,7 +169,7 @@ class kxVolumes {
         {
           opcode: 'importVolume',
           blockType: Scratch.BlockType.COMMAND,
-          text: Scratch.translate("import JSON [JSON] to [VOL]"),
+          text: Scratch.translate('import JSON [JSON] to [VOL]'),
           arguments: {
             JSON: { type: Scratch.ArgumentType.STRING, defaultValue: '{}' },
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
@@ -178,17 +177,17 @@ class kxVolumes {
         },
 
         // --- Diagnostics ---
-        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate("Diagnostics") },
+        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Diagnostics') },
         {
           opcode: 'getLastError',
           blockType: Scratch.BlockType.REPORTER,
-          text: Scratch.translate("last error"),
+          text: Scratch.translate('last error'),
           disableMonitor: false,
         },
         {
           opcode: 'runIntegrityTest',
           blockType: Scratch.BlockType.REPORTER,
-          text: Scratch.translate("run integrity test"),
+          text: Scratch.translate('run integrity test'),
           disableMonitor: false,
         },
       ],
