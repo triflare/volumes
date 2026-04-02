@@ -717,8 +717,7 @@ class kxVolumes {
           perms: { ...defaultPerms },
         };
       } else if (type === 'OPFS') {
-        if (!this._supportsOPFS())
-          throw new Error('INTERNAL_ERROR: OPFS unsupported');
+        if (!this._supportsOPFS()) throw new Error('INTERNAL_ERROR: OPFS unsupported');
         const root = await this._getOPFSRoot();
         const dirName = volName.replace('://', '');
         const handle = await root.getDirectoryHandle(dirName, { create: true });
@@ -1144,9 +1143,9 @@ class kxVolumes {
       } else {
         const node = !relPath
           ? {
-              handle: await (await this._getOPFSRoot()).getDirectoryHandle(
-                volName.replace('://', '')
-              ),
+              handle: await (
+                await this._getOPFSRoot()
+              ).getDirectoryHandle(volName.replace('://', '')),
             }
           : await this._resolveOPFSNode(volName, relPath);
         if (node.type && node.type !== 'directory')
@@ -1299,9 +1298,9 @@ class kxVolumes {
         if (vol.type === 'RAM') {
           tree = serializeRAMNode(vol.root);
         } else {
-          const rootHandle = await (await this._getOPFSRoot()).getDirectoryHandle(
-            volName.replace('://', '')
-          );
+          const rootHandle = await (
+            await this._getOPFSRoot()
+          ).getDirectoryHandle(volName.replace('://', ''));
           tree = await serializeOPFSNode(rootHandle, '', volName);
           tree.perms = vol.perms; // Root perms
         }
