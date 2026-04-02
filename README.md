@@ -1,19 +1,15 @@
 <p align="center">
-  <img src="assets/mint/logo-transparent.png" alt="Mint logo" width="100">
+  <img src="src/assets/icon.svg" alt="Volumes logo" width="100">
 </p>
 
-# Introduction to Mint
+# Introduction to Volumes
 
-> A simple and painless custom TurboWarp extension development platform, powered by bundling.
+Volumes is an OPFS-powered custom extension for TurboWarp and other Scratch mods that allows you to use a custom, virtual file system in your projects.
 
-Have you ever tried to contribute to a custom TurboWarp extension, but got overwhelmed by the pure size of the file? Mint's mission is to fix this issue.
+Imagine if Windows and Linux's file systems had a date, talked about their advantages and disadvantages, and eventually had a baby. **That baby will be Volumes.**
 
-With a bundling solution powered by Node.js, you can now build custom TurboWarp extensions modularly! With the power of JS modules, you can build a custom TurboWarp extension without even touching the 1,000 lines of code you would have had to use if you were to develop it normally.
+## Primary features
 
-The only monolith you'll ever have to even see is the build output!
-
-## Key Features
-
-- **Bundling:** Powered by Node.js, you don't have to edit a huge file just to make a small patch to your custom extension. You can simply edit the file where the logic is held!
-- **In-repo documentation:** A separate documentation repository isn't required &mdash; just edit the `/docs/` folder, and link to that in your extension _(just remember to make it a URL and not a file path)_.
-- **Extensive CI/CD:** One of Mint's main features is automation &mdash; you get CodeQL, Dependabot, auto PR checking, and more right out of the box when you use Mint as your toolchain.
+- **Based on Mint:** Volumes' source code uses the Mint tooling, meaning it'll be rock-hard and easy to maintain in the future.
+- **OPFS-powered:** Not only does this mean Volumes will be stable, it will also be secure. OPFS file systems can only be accessed in the domain they are created in!
+- **Persistent:** Whatever changes you make to an OPFS volume *(like the `fs://` volume you start out with)* will stay after a reload. However, temporary volumes *(like the `tmp://` volume you also start with)* do not.
