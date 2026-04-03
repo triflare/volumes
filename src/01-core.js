@@ -1,4 +1,4 @@
-class kxVolumes {
+class triflareVolumes {
   /* global __ASSET__ */
 
   constructor() {
@@ -26,7 +26,7 @@ class kxVolumes {
 
   getInfo() {
     return {
-      id: 'kx_volumes',
+      id: 'triflareVolumes',
       name: Scratch.translate('Volumes'),
       menuIconURI: __ASSET__('icon.svg'),
       color1: '#63cf7a',
@@ -1653,4 +1653,4 @@ class kxVolumes {
   }
 }
 
-Scratch.extensions.register(new kxVolumes());
+Scratch.extensions.register(new triflareVolumes());
