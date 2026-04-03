@@ -285,12 +285,13 @@ class triflareVolumes {
       e.name === 'SecurityError'
     )
       code = 'PERMISSION_DENIED';
+    else if (message.includes('FORBIDDEN') || e.name === 'ForbiddenError') code = 'FORBIDDEN';
 
     const errObj = {
       status: 'error',
       code: code,
       message: message.replace(
-        /^(NOT_FOUND|TYPE_MISMATCH|QUOTA_EXCEEDED|INVALID_PATH|INVALID_ARGUMENT|PERMISSION_DENIED):\s*/,
+        /^(NOT_FOUND|TYPE_MISMATCH|QUOTA_EXCEEDED|INVALID_PATH|INVALID_ARGUMENT|PERMISSION_DENIED|FORBIDDEN):\s*/,
         ''
       ),
     };
@@ -331,7 +332,9 @@ class triflareVolumes {
 
     // Forbid access to reserved metadata namespace
     if (relPath === '.kx_metadata' || relPath.startsWith('.kx_metadata/')) {
-      throw new Error('FORBIDDEN: Access to reserved path .kx_metadata');
+      const err = new Error('FORBIDDEN: Access to reserved path .kx_metadata');
+      err.name = 'ForbiddenError';
+      throw err;
     }
 
     // Manage cache size to prevent memory leaks over long sessions
@@ -839,6 +842,19 @@ class triflareVolumes {
         for (const key of this._opfsPerms.keys())
           if (key.startsWith(volName)) this._opfsPerms.delete(key);
 
+        // Reseed root permissions in memory and persist to metadata sidecar.
+        const rootPerms = {
+          read: true,
+          write: true,
+          create: true,
+          view: true,
+          delete: true,
+          control: true,
+        };
+        this._opfsPerms.set(`${volName}`, rootPerms);
+        vol.perms = rootPerms;
+        await this._setPerm(volName, '', 'read', rootPerms.read);
+
         // Clean up persist promise chain for formatted OPFS volume
         if (this._opfsPersistPromises && this._opfsPersistPromises[volName]) {
           delete this._opfsPersistPromises[volName];
@@ -1017,43 +1033,67 @@ class triflareVolumes {
         node.content = newBuf;
         vol.size += dataBuf.byteLength;
       } else {
-        let parent, name;
-        try {
-          ({ parent, name } = await this._resolveOPFSNode(volName, relPath, {
-            parentOnly: true,
-            createDirs: true,
-          }));
-        } catch (_e) {
-          // Only fall back to _writePath for not-found errors; rethrow everything else
-          if (
-            _e &&
-            (_e.name === 'NotFoundError' || (_e.message && _e.message.includes('NOT_FOUND')))
-          ) {
-            return this._writePath(args);
-          }
-          throw _e;
-        }
-        let fh;
-        try {
-          fh = await parent.getFileHandle(name);
-        } catch (_e) {
-          if (_e && _e.name === 'NotFoundError') return this._writePath(args);
-          if (_e && _e.name === 'TypeMismatchError')
-            throw new Error('TYPE_MISMATCH: Path is a directory', { cause: _e });
-          throw _e;
-        }
+        // Serialize OPFS append mutations per-volume to avoid races with write/delete/format.
+        this._opfsPersistPromises = this._opfsPersistPromises || {};
+        const prev = this._opfsPersistPromises[volName] || Promise.resolve();
+        const next = prev
+          .catch(() => {})
+          .then(async () => {
+            const { parent, name } = await this._resolveOPFSNode(volName, relPath, {
+              parentOnly: true,
+              createDirs: true,
+            });
 
-        if (!this._getPerms(volName, relPath).write)
-          throw new Error('PERMISSION_DENIED: Write permission denied');
+            let fh;
+            let fileSize = 0;
+            let isNew = false;
+            try {
+              fh = await parent.getFileHandle(name);
+              fileSize = (await fh.getFile()).size;
+            } catch (_e) {
+              if (_e && _e.name === 'NotFoundError') {
+                isNew = true;
+              } else if (_e && _e.name === 'TypeMismatchError') {
+                throw new Error('TYPE_MISMATCH: Path is a directory', { cause: _e });
+              } else {
+                throw _e;
+              }
+            }
 
-        const file = await fh.getFile();
-        if (vol.size + dataBuf.byteLength > vol.sizeLimit)
-          throw new Error('QUOTA_EXCEEDED: Volume full');
+            if (!isNew) {
+              if (!this._getPerms(volName, relPath).write)
+                throw new Error('PERMISSION_DENIED: Write permission denied');
+            } else {
+              const parentRelPath = relPath.split('/').slice(0, -1).join('/');
+              if (!this._getPerms(volName, parentRelPath).create)
+                throw new Error('PERMISSION_DENIED: Create permission denied on parent directory');
+              if (vol.fileCount + 1 > vol.fileCountLimit)
+                throw new Error('QUOTA_EXCEEDED: File count limit reached');
 
-        const writable = await fh.createWritable({ keepExistingData: true });
-        await writable.write({ type: 'write', data: dataBuf, position: file.size });
-        await writable.close();
-        vol.size += dataBuf.byteLength;
+              fh = await parent.getFileHandle(name, { create: true });
+            }
+
+            if (vol.size + dataBuf.byteLength > vol.sizeLimit)
+              throw new Error('QUOTA_EXCEEDED: Volume full');
+
+            const writable = await fh.createWritable({ keepExistingData: !isNew });
+            await writable.write({
+              type: 'write',
+              data: dataBuf,
+              position: isNew ? 0 : fileSize,
+            });
+            await writable.close();
+
+            vol.size += dataBuf.byteLength;
+            if (isNew) vol.fileCount++;
+          })
+          .finally(() => {
+            if (this._opfsPersistPromises[volName] === next) {
+              delete this._opfsPersistPromises[volName];
+            }
+          });
+        this._opfsPersistPromises[volName] = next;
+        await next;
       }
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
@@ -1533,6 +1573,7 @@ class triflareVolumes {
         if (this.volumes[volName].type === 'OPFS') {
           const metaKey = `${volName}`;
           this._opfsPerms.set(metaKey, this.volumes[volName].perms);
+          await this._setPerm(volName, '', 'read', this.volumes[volName].perms.read);
         }
       }
 
@@ -1551,7 +1592,13 @@ class triflareVolumes {
     try {
       const { volName, relPath, vol } = this._parse(args.PATH);
       const perm = args.PERM;
-      const value = args.VALUE === 'allow';
+      const valueToken = typeof args.VALUE === 'string' ? args.VALUE.trim().toLowerCase() : null;
+      if (valueToken !== 'allow' && valueToken !== 'deny') {
+        throw new Error(
+          `INVALID_ARGUMENT: Invalid permission value for ${perm}: ${String(args.VALUE)} (expected allow or deny)`
+        );
+      }
+      const value = valueToken === 'allow';
 
       if (vol.type === 'RAM') {
         if (relPath) this._traverseRAM(volName, relPath);
