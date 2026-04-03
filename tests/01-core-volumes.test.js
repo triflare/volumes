@@ -31,7 +31,7 @@ await import('../src/01-core.js');
 
 // ===== INITIALIZATION & REGISTRATION =====
 
-describe('kxVolumes — initialization', () => {
+describe('triflareVolumes — initialization', () => {
   it('registers an extension instance with Scratch', () => {
     assert.ok(extension, 'Scratch.extensions.register should have been called');
     assert.equal(extension.constructor.name, 'triflare_volumes');
