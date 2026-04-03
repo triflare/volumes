@@ -707,6 +707,11 @@ class triflareVolumes {
       };
 
       if (this.volumes[volName]) {
+        if (this.volumes[volName].type !== type) {
+          throw new Error(
+            `TYPE_MISMATCH: Volume ${volName} already mounted as ${this.volumes[volName].type}`
+          );
+        }
         this.lastError = JSON.stringify({ status: 'success' });
         return this.lastError;
       }
@@ -790,6 +795,10 @@ class triflareVolumes {
       if (!volName.endsWith('://')) volName += '://';
       const vol = this.volumes[volName];
       if (!vol) throw new Error('NOT_FOUND: Volume not found');
+
+      // Align with setPermission root policy: formatting requires root control.
+      if (!this._getPerms(volName, '').control)
+        throw new Error('PERMISSION_DENIED: Control permission denied');
 
       if (vol.type === 'RAM') {
         vol.root = this._createRAMNode('dir');
@@ -1195,6 +1204,7 @@ class triflareVolumes {
           try {
             const dirHandle = await parent.getDirectoryHandle(name);
             const stats = await this._getDirectoryStats(dirHandle);
+            sizeFreed = stats.size;
             filesFreed = stats.count;
           } catch (_e2) {
             throw new Error('NOT_FOUND: Path does not exist', { cause: _e2 });
@@ -1297,6 +1307,8 @@ class triflareVolumes {
 
       for (const volName of volsToExport) {
         if (!this.volumes[volName]) throw new Error(`NOT_FOUND: Volume ${volName} does not exist`);
+        if (!this._getPerms(volName, '').control)
+          throw new Error(`PERMISSION_DENIED: Control permission denied for volume ${volName}`);
         const vol = this.volumes[volName];
 
         let tree;
