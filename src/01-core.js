@@ -384,6 +384,63 @@ class triflareVolumes {
     return btoa(chunks.join(''));
   }
 
+  _normalizeDispatchToken(rawValue, mapping, argName) {
+    const token = typeof rawValue === 'string' ? rawValue.trim().toLowerCase() : '';
+    if (!Object.prototype.hasOwnProperty.call(mapping, token)) {
+      throw new Error(
+        `INVALID_ARGUMENT: Invalid ${argName}: ${String(rawValue)} (expected one of: ${Object.keys(mapping).join(', ')})`
+      );
+    }
+    return mapping[token];
+  }
+
+  _normalizePermsObject(perms, contextLabel, options = {}) {
+    const base = options.includeDefaults
+      ? {
+          read: true,
+          write: true,
+          create: true,
+          view: true,
+          delete: true,
+          control: true,
+        }
+      : {};
+
+    if (perms == null) return base;
+    if (typeof perms !== 'object' || Array.isArray(perms)) {
+      throw new Error(`INVALID_ARGUMENT: ${contextLabel} must be an object`);
+    }
+
+    const allowedKeys = ['read', 'write', 'create', 'view', 'delete', 'control'];
+    for (const key of allowedKeys) {
+      if (!Object.prototype.hasOwnProperty.call(perms, key)) continue;
+      const value = perms[key];
+      if (typeof value !== 'boolean') {
+        throw new Error(
+          `INVALID_ARGUMENT: ${contextLabel}.${key} must be boolean (received ${String(value)})`
+        );
+      }
+      base[key] = value;
+    }
+
+    return base;
+  }
+
+  _enqueueOPFSVolumeMutation(volName, operation) {
+    this._opfsPersistPromises = this._opfsPersistPromises || {};
+    const prev = this._opfsPersistPromises[volName] || Promise.resolve();
+    const next = prev
+      .catch(() => {})
+      .then(operation)
+      .finally(() => {
+        if (this._opfsPersistPromises[volName] === next) {
+          delete this._opfsPersistPromises[volName];
+        }
+      });
+    this._opfsPersistPromises[volName] = next;
+    return next;
+  }
+
   // --- Permission Engine ---
   _getPerms(volName, relPath) {
     const defaultPerms = {
@@ -830,35 +887,32 @@ class triflareVolumes {
         vol.size = 0;
         vol.fileCount = 0;
       } else {
-        const root = await this._getOPFSRoot();
-        const dirName = volName.replace('://', '');
-        await root.removeEntry(dirName, { recursive: true });
-        await root.getDirectoryHandle(dirName, { create: true });
-        vol.size = 0;
-        vol.fileCount = 0;
+        await this._enqueueOPFSVolumeMutation(volName, async () => {
+          const root = await this._getOPFSRoot();
+          const dirName = volName.replace('://', '');
+          await root.removeEntry(dirName, { recursive: true });
+          await root.getDirectoryHandle(dirName, { create: true });
+          vol.size = 0;
+          vol.fileCount = 0;
 
-        for (const key of this._opfsMeta.keys())
-          if (key.startsWith(volName)) this._opfsMeta.delete(key);
-        for (const key of this._opfsPerms.keys())
-          if (key.startsWith(volName)) this._opfsPerms.delete(key);
+          for (const key of this._opfsMeta.keys())
+            if (key.startsWith(volName)) this._opfsMeta.delete(key);
+          for (const key of this._opfsPerms.keys())
+            if (key.startsWith(volName)) this._opfsPerms.delete(key);
 
-        // Reseed root permissions in memory and persist to metadata sidecar.
-        const rootPerms = {
-          read: true,
-          write: true,
-          create: true,
-          view: true,
-          delete: true,
-          control: true,
-        };
-        this._opfsPerms.set(`${volName}`, rootPerms);
-        vol.perms = rootPerms;
-        await this._setPerm(volName, '', 'read', rootPerms.read);
-
-        // Clean up persist promise chain for formatted OPFS volume
-        if (this._opfsPersistPromises && this._opfsPersistPromises[volName]) {
-          delete this._opfsPersistPromises[volName];
-        }
+          // Reseed root permissions in memory and persist to metadata sidecar.
+          const rootPerms = {
+            read: true,
+            write: true,
+            create: true,
+            view: true,
+            delete: true,
+            control: true,
+          };
+          this._opfsPerms.set(`${volName}`, rootPerms);
+          vol.perms = rootPerms;
+          await this._persistOPFSMetadata(volName);
+        });
       }
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
@@ -868,18 +922,56 @@ class triflareVolumes {
   }
 
   async fileWrite(args) {
-    if (args.MODE === 'append') return this._appendPath(args);
-    return this._writePath(args);
+    try {
+      const mode = this._normalizeDispatchToken(
+        args.MODE,
+        {
+          write: 'write',
+          append: 'append',
+        },
+        'MODE'
+      );
+      if (mode === 'append') return this._appendPath(args);
+      return this._writePath(args);
+    } catch (e) {
+      return this._handleError(e);
+    }
   }
 
   async fileRead(args) {
-    if (args.FORMAT === 'Data URI') return this._getDataURI(args);
-    return this._readPath(args);
+    try {
+      const format = this._normalizeDispatchToken(
+        args.FORMAT,
+        {
+          text: 'text',
+          'data uri': 'data-uri',
+        },
+        'FORMAT'
+      );
+      if (format === 'data-uri') return this._getDataURI(args);
+      return this._readPath(args);
+    } catch (e) {
+      this._handleError(e);
+      return '';
+    }
   }
 
   async pathCheck(args) {
-    if (args.CONDITION === 'is a directory') return this._isDir(args);
-    return this._exists(args);
+    try {
+      const condition = this._normalizeDispatchToken(
+        args.CONDITION,
+        {
+          exists: 'exists',
+          'is a directory': 'is-dir',
+        },
+        'CONDITION'
+      );
+      if (condition === 'is-dir') return this._isDir(args);
+      return this._exists(args);
+    } catch (e) {
+      this._handleError(e);
+      return false;
+    }
   }
 
   // --- Read/Write Implementations ---
@@ -1010,7 +1102,7 @@ class triflareVolumes {
     try {
       const { volName, relPath, vol } = this._parse(args.PATH);
       if (!relPath) throw new Error('INVALID_PATH: Cannot append to root');
-      const { dataBuf } = this._parseDataOrString(args.STRING);
+      const { mime, dataBuf } = this._parseDataOrString(args.STRING);
 
       if (vol.type === 'RAM') {
         const { parent, name } = this._traverseRAM(volName, relPath, {
@@ -1083,6 +1175,12 @@ class triflareVolumes {
               position: isNew ? 0 : fileSize,
             });
             await writable.close();
+
+            if (isNew) {
+              const metaKey = `${volName}${relPath}`;
+              this._opfsMeta.set(metaKey, mime);
+              await this._persistOPFSMetadata(volName);
+            }
 
             vol.size += dataBuf.byteLength;
             if (isNew) vol.fileCount++;
@@ -1278,54 +1376,40 @@ class triflareVolumes {
         vol.size -= stats.size;
         vol.fileCount -= stats.count;
       } else {
-        const { parent, name } = await this._resolveOPFSNode(volName, relPath, {
-          parentOnly: true,
-        });
-        let sizeFreed = 0;
-        let filesFreed = 0;
-        try {
-          const file = await (await parent.getFileHandle(name)).getFile();
-          sizeFreed = file.size;
-          filesFreed = 1;
-        } catch (_e) {
+        await this._enqueueOPFSVolumeMutation(volName, async () => {
+          const { parent, name } = await this._resolveOPFSNode(volName, relPath, {
+            parentOnly: true,
+          });
+          let sizeFreed;
+          let filesFreed;
           try {
-            const dirHandle = await parent.getDirectoryHandle(name);
-            const stats = await this._getDirectoryStats(dirHandle);
-            sizeFreed = stats.size;
-            filesFreed = stats.count;
-          } catch (_e2) {
-            throw new Error('NOT_FOUND: Path does not exist', { cause: _e2 });
+            const file = await (await parent.getFileHandle(name)).getFile();
+            sizeFreed = file.size;
+            filesFreed = 1;
+          } catch (_e) {
+            try {
+              const dirHandle = await parent.getDirectoryHandle(name);
+              const stats = await this._getDirectoryStats(dirHandle);
+              sizeFreed = stats.size;
+              filesFreed = stats.count;
+            } catch (_e2) {
+              throw new Error('NOT_FOUND: Path does not exist', { cause: _e2 });
+            }
           }
-        }
-        await parent.removeEntry(name, { recursive: true });
+          await parent.removeEntry(name, { recursive: true });
 
-        const prefix = `${volName}${relPath}`;
-        for (const key of this._opfsMeta.keys()) {
-          if (key === prefix || key.startsWith(prefix + '/')) this._opfsMeta.delete(key);
-        }
-        for (const key of this._opfsPerms.keys()) {
-          if (key === prefix || key.startsWith(prefix + '/')) this._opfsPerms.delete(key);
-        }
+          const prefix = `${volName}${relPath}`;
+          for (const key of this._opfsMeta.keys()) {
+            if (key === prefix || key.startsWith(prefix + '/')) this._opfsMeta.delete(key);
+          }
+          for (const key of this._opfsPerms.keys()) {
+            if (key === prefix || key.startsWith(prefix + '/')) this._opfsPerms.delete(key);
+          }
 
-        vol.size -= sizeFreed;
-        vol.fileCount -= filesFreed;
-
-        // Persist metadata so deletions are durable across reloads. Use the
-        // per-volume serialization promise to avoid races.
-        if (this.volumes[volName] && this.volumes[volName].type === 'OPFS') {
-          this._opfsPersistPromises = this._opfsPersistPromises || {};
-          const prev = this._opfsPersistPromises[volName] || Promise.resolve();
-          const next = prev
-            .catch(() => {})
-            .then(() => this._persistOPFSMetadata(volName))
-            .finally(() => {
-              if (this._opfsPersistPromises[volName] === next) {
-                delete this._opfsPersistPromises[volName];
-              }
-            });
-          this._opfsPersistPromises[volName] = next;
-          await next;
-        }
+          vol.size -= sizeFreed;
+          vol.fileCount -= filesFreed;
+          await this._persistOPFSMetadata(volName);
+        });
       }
       this._pathCache.clear(); // Safety clear on delete
       this.lastError = JSON.stringify({ status: 'success' });
@@ -1507,15 +1591,21 @@ class triflareVolumes {
               if (this.volumes[volName].type === 'RAM') {
                 this._traverseRAM(volName, childRelPath, { createDirs: true, parentOnly: false });
               } else {
-                await this._resolveOPFSNode(volName, childRelPath, {
-                  createDirs: true,
-                  parentOnly: false,
+                await this._enqueueOPFSVolumeMutation(volName, async () => {
+                  await this._resolveOPFSNode(volName, childRelPath, {
+                    createDirs: true,
+                    parentOnly: false,
+                  });
                 });
               }
             }
             // Defer permission application
             if (nodeData.perms && childRelPath) {
-              permsToApply.push({ path: childRelPath, perms: nodeData.perms });
+              const normalizedPerms = this._normalizePermsObject(
+                nodeData.perms,
+                `permissions for ${volName}${childRelPath}`
+              );
+              permsToApply.push({ path: childRelPath, perms: normalizedPerms });
             }
             // Recurse into children first
             if (nodeData.children) {
@@ -1536,7 +1626,11 @@ class triflareVolumes {
 
             // Defer file permission application
             if (nodeData.perms) {
-              permsToApply.push({ path: childRelPath, perms: nodeData.perms });
+              const normalizedPerms = this._normalizePermsObject(
+                nodeData.perms,
+                `permissions for ${volName}${childRelPath}`
+              );
+              permsToApply.push({ path: childRelPath, perms: normalizedPerms });
             }
           }
         };
@@ -1553,27 +1647,20 @@ class triflareVolumes {
           for (const [k, v] of Object.entries(perms)) {
             await this._setPerm(volName, path, k, v);
           }
-          // Update _opfsPerms for OPFS volumes
-          if (this.volumes[volName].type === 'OPFS') {
-            const metaKey = `${volName}${path}`;
-            this._opfsPerms.set(metaKey, perms);
-          }
         }
 
         // Apply root permissions last
-        this.volumes[volName].perms = volData.perms || {
-          read: true,
-          write: true,
-          create: true,
-          view: true,
-          delete: true,
-          control: true,
-        };
+        const normalizedRootPerms = this._normalizePermsObject(
+          volData.perms,
+          `root permissions for ${volName}`,
+          { includeDefaults: true }
+        );
+        this.volumes[volName].perms = normalizedRootPerms;
 
         if (this.volumes[volName].type === 'OPFS') {
-          const metaKey = `${volName}`;
-          this._opfsPerms.set(metaKey, this.volumes[volName].perms);
-          await this._setPerm(volName, '', 'read', this.volumes[volName].perms.read);
+          for (const [k, v] of Object.entries(normalizedRootPerms)) {
+            await this._setPerm(volName, '', k, v);
+          }
         }
       }
 
@@ -1686,102 +1773,108 @@ class triflareVolumes {
         if (st !== 'error') throw new Error(msg + ' (expected error, got success)');
       };
 
-      const vol = 'testfs://';
+      const suffix = Math.random().toString(36).slice(2, 10);
+      const vol = `testfs-${suffix}://`;
+      let created = false;
 
-      // 1. Mount test volume
-      assertOK(await this.mountAs({ VOL: vol, TYPE: 'RAM' }), 'Mount');
+      try {
+        // 1. Mount test volume
+        assertOK(await this.mountAs({ VOL: vol, TYPE: 'RAM' }), 'Mount');
+        created = true;
 
-      // 2. Join Paths
-      assert(
-        this.joinPaths({ P1: vol + 'dir', P2: 'file.txt' }) === vol + 'dir/file.txt',
-        'Join Paths'
-      );
+        // 2. Join Paths
+        assert(
+          this.joinPaths({ P1: vol + 'dir', P2: 'file.txt' }) === vol + 'dir/file.txt',
+          'Join Paths'
+        );
 
-      // 3. Write
-      assertOK(
-        await this.fileWrite({ MODE: 'write', STRING: 'hello', PATH: vol + 'f1.txt' }),
-        'Write'
-      );
+        // 3. Write
+        assertOK(
+          await this.fileWrite({ MODE: 'write', STRING: 'hello', PATH: vol + 'f1.txt' }),
+          'Write'
+        );
 
-      // 4. Read
-      assert((await this.fileRead({ PATH: vol + 'f1.txt', FORMAT: 'text' })) === 'hello', 'Read');
+        // 4. Read
+        assert((await this.fileRead({ PATH: vol + 'f1.txt', FORMAT: 'text' })) === 'hello', 'Read');
 
-      // 5. Append
-      assertOK(
-        await this.fileWrite({ MODE: 'append', STRING: ' world', PATH: vol + 'f1.txt' }),
-        'Append'
-      );
-      assert(
-        (await this.fileRead({ PATH: vol + 'f1.txt', FORMAT: 'text' })) === 'hello world',
-        'Append Read'
-      );
+        // 5. Append
+        assertOK(
+          await this.fileWrite({ MODE: 'append', STRING: ' world', PATH: vol + 'f1.txt' }),
+          'Append'
+        );
+        assert(
+          (await this.fileRead({ PATH: vol + 'f1.txt', FORMAT: 'text' })) === 'hello world',
+          'Append Read'
+        );
 
-      // 6. Path Checks
-      assert(
-        (await this.pathCheck({ PATH: vol + 'f1.txt', CONDITION: 'exists' })) === true,
-        'Exists (true)'
-      );
-      assert(
-        (await this.pathCheck({ PATH: vol + 'fake.txt', CONDITION: 'exists' })) === false,
-        'Exists (false)'
-      );
-      assert(
-        (await this.pathCheck({ PATH: vol + 'f1.txt', CONDITION: 'is a directory' })) === false,
-        'IsDir (false)'
-      );
+        // 6. Path Checks
+        assert(
+          (await this.pathCheck({ PATH: vol + 'f1.txt', CONDITION: 'exists' })) === true,
+          'Exists (true)'
+        );
+        assert(
+          (await this.pathCheck({ PATH: vol + 'fake.txt', CONDITION: 'exists' })) === false,
+          'Exists (false)'
+        );
+        assert(
+          (await this.pathCheck({ PATH: vol + 'f1.txt', CONDITION: 'is a directory' })) === false,
+          'IsDir (false)'
+        );
 
-      // 7. Data URI Check
-      const b64 = btoa('test');
-      assertOK(
-        await this.fileWrite({
-          MODE: 'write',
-          STRING: 'data:text/plain;base64,' + b64,
-          PATH: vol + 'img.txt',
-        }),
-        'DataURI Write'
-      );
-      assert(
-        (await this.fileRead({ PATH: vol + 'img.txt', FORMAT: 'text' })) === 'test',
-        'DataURI Read Text'
-      );
+        // 7. Data URI Check
+        const b64 = btoa('test');
+        assertOK(
+          await this.fileWrite({
+            MODE: 'write',
+            STRING: 'data:text/plain;base64,' + b64,
+            PATH: vol + 'img.txt',
+          }),
+          'DataURI Write'
+        );
+        assert(
+          (await this.fileRead({ PATH: vol + 'img.txt', FORMAT: 'text' })) === 'test',
+          'DataURI Read Text'
+        );
 
-      // 8. List Files
-      let files = JSON.parse(await this.listFiles({ DEPTH: 'immediate', PATH: vol }));
-      assert(files.includes('f1.txt') && files.includes('img.txt'), 'List Files');
+        // 8. List Files
+        let files = JSON.parse(await this.listFiles({ DEPTH: 'immediate', PATH: vol }));
+        assert(files.includes('f1.txt') && files.includes('img.txt'), 'List Files');
 
-      // 9. Limits
-      assertOK(await this.setFileCountLimit({ VOL: vol, LIMIT: 2 }), 'Set Limit');
-      await this.fileWrite({ MODE: 'write', STRING: 'x', PATH: vol + 'f3.txt' });
-      assertErr(this.lastError, 'Quota bypass');
+        // 9. Limits
+        assertOK(await this.setFileCountLimit({ VOL: vol, LIMIT: 2 }), 'Set Limit');
+        await this.fileWrite({ MODE: 'write', STRING: 'x', PATH: vol + 'f3.txt' });
+        assertErr(this.lastError, 'Quota bypass');
 
-      // 10. Permissions
-      assertOK(
-        await this.setPermission({ PATH: vol + 'f1.txt', PERM: 'read', VALUE: 'deny' }),
-        'Set Perm'
-      );
-      assert(
-        (await this.checkPermission({ PATH: vol + 'f1.txt', PERM: 'read' })) === false,
-        'Check Perm'
-      );
-      await this.fileRead({ PATH: vol + 'f1.txt', FORMAT: 'text' });
-      assertErr(this.lastError, 'Perm bypass');
+        // 10. Permissions
+        assertOK(
+          await this.setPermission({ PATH: vol + 'f1.txt', PERM: 'read', VALUE: 'deny' }),
+          'Set Perm'
+        );
+        assert(
+          (await this.checkPermission({ PATH: vol + 'f1.txt', PERM: 'read' })) === false,
+          'Check Perm'
+        );
+        await this.fileRead({ PATH: vol + 'f1.txt', FORMAT: 'text' });
+        assertErr(this.lastError, 'Perm bypass');
 
-      // 11. Delete
-      assertOK(await this.deletePath({ PATH: vol + 'img.txt' }), 'Delete');
-      assert(
-        (await this.pathCheck({ PATH: vol + 'img.txt', CONDITION: 'exists' })) === false,
-        'Delete Verify'
-      );
+        // 11. Delete
+        assertOK(await this.deletePath({ PATH: vol + 'img.txt' }), 'Delete');
+        assert(
+          (await this.pathCheck({ PATH: vol + 'img.txt', CONDITION: 'exists' })) === false,
+          'Delete Verify'
+        );
 
-      // 12. Format
-      assertOK(await this.formatVolume({ VOL: vol }), 'Format');
-      files = JSON.parse(await this.listFiles({ DEPTH: 'immediate', PATH: vol }));
-      assert(files.length === 0, 'Format Verify');
-
-      // Cleanup test volume completely to prevent clutter
-      delete this.volumes[vol];
-      if (this._opfsPersistPromises && this._opfsPersistPromises[vol]) {
-        delete this._opfsPersistPromises[vol];
+        // 12. Format
+        assertOK(await this.formatVolume({ VOL: vol }), 'Format');
+        files = JSON.parse(await this.listFiles({ DEPTH: 'immediate', PATH: vol }));
+        assert(files.length === 0, 'Format Verify');
+      } finally {
+        if (created) {
+          delete this.volumes[vol];
+          if (this._opfsPersistPromises && this._opfsPersistPromises[vol]) {
+            delete this._opfsPersistPromises[vol];
+          }
+        }
       }
 
       return 'OK';
