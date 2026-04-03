@@ -957,7 +957,14 @@ class triflareVolumes {
         // Persist metadata after write (serialize per-volume to avoid interleaving)
         this._opfsPersistPromises = this._opfsPersistPromises || {};
         const prev = this._opfsPersistPromises[volName] || Promise.resolve();
-        const next = prev.catch(() => {}).then(() => this._persistOPFSMetadata(volName));
+        const next = prev
+          .catch(() => {})
+          .then(() => this._persistOPFSMetadata(volName))
+          .finally(() => {
+            if (this._opfsPersistPromises[volName] === next) {
+              delete this._opfsPersistPromises[volName];
+            }
+          });
         this._opfsPersistPromises[volName] = next;
         await next.catch(() => {});
       }
@@ -1252,7 +1259,14 @@ class triflareVolumes {
         if (this.volumes[volName] && this.volumes[volName].type === 'OPFS') {
           this._opfsPersistPromises = this._opfsPersistPromises || {};
           const prev = this._opfsPersistPromises[volName] || Promise.resolve();
-          const next = prev.catch(() => {}).then(() => this._persistOPFSMetadata(volName));
+          const next = prev
+            .catch(() => {})
+            .then(() => this._persistOPFSMetadata(volName))
+            .finally(() => {
+              if (this._opfsPersistPromises[volName] === next) {
+                delete this._opfsPersistPromises[volName];
+              }
+            });
           this._opfsPersistPromises[volName] = next;
           await next;
         }

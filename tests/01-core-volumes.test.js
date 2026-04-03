@@ -12,12 +12,12 @@
  * - Size and file count limits
  */
 
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { installScratchMock } from './helpers/mock-scratch.js';
 
 // Install the mock and capture the registered extension instance.
-const { mock } = installScratchMock();
+const { mock, restore } = installScratchMock();
 let extension;
 mock.extensions.register = instance => {
   extension = instance;
@@ -27,7 +27,23 @@ mock.extensions.register = instance => {
 globalThis.__ASSET__ = path => `data:image/svg+xml;base64,test${path}`;
 
 // Top-level await: load the core module so registration fires.
-await import('../src/01-core.js');
+let importError;
+try {
+  await import('../src/01-core.js');
+} catch (e) {
+  importError = e;
+} finally {
+  if (importError) {
+    restore();
+    delete globalThis.__ASSET__;
+    throw importError;
+  }
+}
+
+after(() => {
+  restore();
+  delete globalThis.__ASSET__;
+});
 
 // ===== INITIALIZATION & REGISTRATION =====
 
@@ -62,7 +78,7 @@ describe('triflareVolumes — initialization', () => {
 
 // ===== BLOCK DEFINITIONS =====
 
-describe('kxVolumes — block definitions', () => {
+describe('triflareVolumes — block definitions', () => {
   it('declares all required block opcodes', () => {
     const info = extension.getInfo();
     const opcodes = info.blocks.map(b => b.opcode).filter(o => o);
@@ -105,7 +121,7 @@ describe('kxVolumes — block definitions', () => {
 
 // ===== VOLUME MANAGEMENT =====
 
-describe('kxVolumes — volume mounting', () => {
+describe('triflareVolumes — volume mounting', () => {
   it('mounts a new RAM volume', async () => {
     const result = await extension.mountAs({ VOL: 'test1://', TYPE: 'RAM' });
     const status = JSON.parse(result);
@@ -155,7 +171,7 @@ describe('kxVolumes — volume mounting', () => {
 
 // ===== FILE WRITE OPERATIONS =====
 
-describe('kxVolumes — file write operations', () => {
+describe('triflareVolumes — file write operations', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'write_test://', TYPE: 'RAM' });
   });
@@ -247,7 +263,7 @@ describe('kxVolumes — file write operations', () => {
 
 // ===== FILE APPEND OPERATIONS =====
 
-describe('kxVolumes — file append operations', () => {
+describe('triflareVolumes — file append operations', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'append_test://', TYPE: 'RAM' });
   });
@@ -313,7 +329,7 @@ describe('kxVolumes — file append operations', () => {
 
 // ===== FILE READ OPERATIONS =====
 
-describe('kxVolumes — file read operations', () => {
+describe('triflareVolumes — file read operations', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'read_test://', TYPE: 'RAM' });
     await extension.fileWrite({
@@ -367,7 +383,7 @@ describe('kxVolumes — file read operations', () => {
 
 // ===== DATA URI OPERATIONS =====
 
-describe('kxVolumes — Data URI handling', () => {
+describe('triflareVolumes — Data URI handling', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'uri_test://', TYPE: 'RAM' });
   });
@@ -443,7 +459,7 @@ describe('kxVolumes — Data URI handling', () => {
 
 // ===== PATH OPERATIONS =====
 
-describe('kxVolumes — path operations', () => {
+describe('triflareVolumes — path operations', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'path_test://', TYPE: 'RAM' });
   });
@@ -481,7 +497,7 @@ describe('kxVolumes — path operations', () => {
 
 // ===== PATH EXISTENCE CHECKS =====
 
-describe('kxVolumes — path check operations', () => {
+describe('triflareVolumes — path check operations', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'check_test://', TYPE: 'RAM' });
     await extension.fileWrite({
@@ -540,20 +556,32 @@ describe('kxVolumes — path check operations', () => {
     const vol = 'check_test://';
     await extension.setPermission({ PATH: vol, PERM: 'view', VALUE: 'deny' });
 
-    // View permission affects listing but not existence checks
-    const _exists = await extension.pathCheck({
-      PATH: vol,
-      CONDITION: 'exists',
-    });
+    try {
+      // View permission affects listing but not existence checks
+      const _exists = await extension.pathCheck({
+        PATH: vol,
+        CONDITION: 'exists',
+      });
+      assert.equal(_exists, true);
 
-    // Reset permission
-    await extension.setPermission({ PATH: vol, PERM: 'view', VALUE: 'allow' });
+      const listResult = await extension.listFiles({
+        DEPTH: 'immediate',
+        PATH: vol,
+      });
+      assert.equal(listResult, '[]');
+      const lastError = JSON.parse(extension.lastError);
+      assert.equal(lastError.status, 'error');
+      assert.match(lastError.message, /View permission denied/);
+    } finally {
+      // Reset permission
+      await extension.setPermission({ PATH: vol, PERM: 'view', VALUE: 'allow' });
+    }
   });
 });
 
 // ===== FILE LISTING =====
 
-describe('kxVolumes — file listing', () => {
+describe('triflareVolumes — file listing', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'list_test://', TYPE: 'RAM' });
 
@@ -656,7 +684,7 @@ describe('kxVolumes — file listing', () => {
 
 // ===== FILE DELETION =====
 
-describe('kxVolumes — file deletion', () => {
+describe('triflareVolumes — file deletion', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'delete_test://', TYPE: 'RAM' });
   });
@@ -719,7 +747,7 @@ describe('kxVolumes — file deletion', () => {
 
 // ===== PERMISSION SYSTEM =====
 
-describe('kxVolumes — permission management', () => {
+describe('triflareVolumes — permission management', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'perm_test://', TYPE: 'RAM' });
     await extension.fileWrite({
@@ -818,7 +846,7 @@ describe('kxVolumes — permission management', () => {
 
 // ===== SIZE AND FILE COUNT LIMITS =====
 
-describe('kxVolumes — size and file count limits', () => {
+describe('triflareVolumes — size and file count limits', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'limit_test://', TYPE: 'RAM' });
   });
@@ -905,7 +933,7 @@ describe('kxVolumes — size and file count limits', () => {
 
 // ===== VOLUME FORMATTING =====
 
-describe('kxVolumes — volume formatting', () => {
+describe('triflareVolumes — volume formatting', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'format_test://', TYPE: 'RAM' });
     await extension.fileWrite({ MODE: 'write', STRING: 'a', PATH: 'format_test://file1.txt' });
@@ -949,7 +977,7 @@ describe('kxVolumes — volume formatting', () => {
 
 // ===== IMPORT/EXPORT =====
 
-describe('kxVolumes — export/import', () => {
+describe('triflareVolumes — export/import', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'export_test://', TYPE: 'RAM' });
     await extension.fileWrite({
@@ -1065,7 +1093,7 @@ describe('kxVolumes — export/import', () => {
 
 // ===== ERROR HANDLING =====
 
-describe('kxVolumes — error handling', () => {
+describe('triflareVolumes — error handling', () => {
   it('tracks last error', async () => {
     // Trigger error
     await extension.fileWrite({
@@ -1140,7 +1168,7 @@ describe('kxVolumes — error handling', () => {
 
 // ===== PATH PARSING & VALIDATION =====
 
-describe('kxVolumes — path parsing', () => {
+describe('triflareVolumes — path parsing', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'parse_test://', TYPE: 'RAM' });
   });
@@ -1222,7 +1250,7 @@ describe('kxVolumes — path parsing', () => {
 
 // ===== INTEGRATION TESTS =====
 
-describe('kxVolumes — integration scenarios', () => {
+describe('triflareVolumes — integration scenarios', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'integration_test://', TYPE: 'RAM' });
   });
@@ -1324,7 +1352,7 @@ describe('kxVolumes — integration scenarios', () => {
 
 // ===== EDGE CASES =====
 
-describe('kxVolumes — edge cases', () => {
+describe('triflareVolumes — edge cases', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'edge_test://', TYPE: 'RAM' });
   });
@@ -1413,7 +1441,7 @@ describe('kxVolumes — edge cases', () => {
 
 // ===== CONCURRENT OPERATIONS =====
 
-describe('kxVolumes — concurrent operations', () => {
+describe('triflareVolumes — concurrent operations', () => {
   before(async () => {
     await extension.mountAs({ VOL: 'concurrent_test://', TYPE: 'RAM' });
   });
