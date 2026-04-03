@@ -444,7 +444,13 @@ class triflareVolumes {
     if (this.volumes[volName] && this.volumes[volName].type === 'OPFS') {
       this._opfsPersistPromises = this._opfsPersistPromises || {};
       const prev = this._opfsPersistPromises[volName] || Promise.resolve();
-      const next = prev.catch(() => {}).then(() => this._persistOPFSMetadata(volName));
+      const next = prev.catch(() => {}).then(() => this._persistOPFSMetadata(volName))
+        .finally(() => {
+          // Clean up stale entries if volume no longer exists or is no longer OPFS
+          if (!this.volumes[volName] || this.volumes[volName].type !== 'OPFS') {
+            delete this._opfsPersistPromises[volName];
+          }
+        });
       this._opfsPersistPromises[volName] = next;
       return next;
     }
@@ -583,7 +589,9 @@ class triflareVolumes {
           this._opfsPerms.set(key, value);
           // Keep public volume root perms in sync so remounts/imports preserve them
           if (key === volName) {
-            if (!this.volumes[volName]) this.volumes[volName] = {};
+            if (!this.volumes[volName]) {
+              throw new Error(`INTERNAL_ERROR: Cannot restore permissions for unmounted volume ${volName}`);
+            }
             this.volumes[volName].perms = value;
           }
         }
@@ -761,7 +769,7 @@ class triflareVolumes {
       if (!vol) throw new Error('NOT_FOUND: Volume not found');
       const newLimit = Number(args.LIMIT);
       if (isNaN(newLimit) || newLimit < 0)
-        throw new Error('INVALID_ARGUMENT: Limit must be positive');
+        throw new Error('INVALID_ARGUMENT: Limit must be non-negative');
       vol.sizeLimit = newLimit;
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
@@ -779,7 +787,7 @@ class triflareVolumes {
       if (!vol) throw new Error('NOT_FOUND: Volume not found');
       const newLimit = Number(args.LIMIT);
       if (isNaN(newLimit) || newLimit < 0)
-        throw new Error('INVALID_ARGUMENT: Limit must be positive');
+        throw new Error('INVALID_ARGUMENT: Limit must be non-negative');
       vol.fileCountLimit = newLimit;
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
@@ -816,6 +824,11 @@ class triflareVolumes {
           if (key.startsWith(volName)) this._opfsMeta.delete(key);
         for (const key of this._opfsPerms.keys())
           if (key.startsWith(volName)) this._opfsPerms.delete(key);
+
+        // Clean up persist promise chain for formatted OPFS volume
+        if (this._opfsPersistPromises && this._opfsPersistPromises[volName]) {
+          delete this._opfsPersistPromises[volName];
+        }
       }
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
@@ -985,7 +998,11 @@ class triflareVolumes {
             createDirs: true,
           }));
         } catch (_e) {
-          return this._writePath(args);
+          // Only fall back to _writePath for not-found errors; rethrow everything else
+          if (_e && (_e.name === 'NotFoundError' || (_e.message && _e.message.includes('NOT_FOUND')))) {
+            return this._writePath(args);
+          }
+          throw _e;
         }
         let fh;
         try {
@@ -1509,6 +1526,13 @@ class triflareVolumes {
       const { volName, relPath, vol } = this._parse(args.PATH);
       const perm = args.PERM;
 
+      // Validate the permission type before checking its value
+      const validPerms = ['read', 'write', 'create', 'view', 'delete', 'control'];
+      if (typeof perm !== 'string' || !validPerms.includes(perm)) {
+        this._handleError(new Error('INVALID_ARGUMENT: Invalid permission type'));
+        return false;
+      }
+
       // Verify target exists (align behavior with other permission-related methods)
       if (relPath) {
         try {
@@ -1524,8 +1548,9 @@ class triflareVolumes {
         }
       }
 
+      const perms = this._getPerms(volName, relPath);
       this.lastError = JSON.stringify({ status: 'success' });
-      return this._getPerms(volName, relPath)[perm] === true;
+      return Object.prototype.hasOwnProperty.call(perms, perm) && perms[perm] === true;
     } catch (e) {
       this._handleError(e);
       return false;
@@ -1657,6 +1682,9 @@ class triflareVolumes {
 
       // Cleanup test volume completely to prevent clutter
       delete this.volumes[vol];
+      if (this._opfsPersistPromises && this._opfsPersistPromises[vol]) {
+        delete this._opfsPersistPromises[vol];
+      }
 
       return 'OK';
     } catch (e) {
