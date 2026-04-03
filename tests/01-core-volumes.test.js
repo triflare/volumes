@@ -34,7 +34,7 @@ await import('../src/01-core.js');
 describe('triflareVolumes — initialization', () => {
   it('registers an extension instance with Scratch', () => {
     assert.ok(extension, 'Scratch.extensions.register should have been called');
-    assert.equal(extension.constructor.name, 'triflare_volumes');
+    assert.equal(extension.constructor.name, 'triflareVolumes');
   });
 
   it('exposes a getInfo() method', () => {
@@ -43,7 +43,7 @@ describe('triflareVolumes — initialization', () => {
 
   it('returns valid extension info', () => {
     const info = extension.getInfo();
-    assert.equal(info.id, 'triflare_volumes');
+    assert.equal(info.id, 'triflareVolumes');
     assert.equal(typeof info.name, 'string');
     assert.ok(Array.isArray(info.blocks));
     assert.ok(info.blocks.length > 0);
