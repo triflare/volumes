@@ -994,7 +994,7 @@ class triflareVolumes {
 
         const node = parent.children.get(name);
         if (node.type === 'dir') throw new Error('TYPE_MISMATCH: Is a directory');
-        if (vol.size + dataBuf.byteLength > vol.sizeLimit) throw new Error('QUOTA_EXCEEDED');
+        if (vol.size + dataBuf.byteLength > vol.sizeLimit) throw new Error('QUOTA_EXCEEDED: Volume full');
 
         const newBuf = new Uint8Array(node.content.byteLength + dataBuf.byteLength);
         newBuf.set(node.content);
@@ -1032,7 +1032,7 @@ class triflareVolumes {
           throw new Error('PERMISSION_DENIED: Write permission denied');
 
         const file = await fh.getFile();
-        if (vol.size + dataBuf.byteLength > vol.sizeLimit) throw new Error('QUOTA_EXCEEDED');
+        if (vol.size + dataBuf.byteLength > vol.sizeLimit) throw new Error('QUOTA_EXCEEDED: Volume full');
 
         const writable = await fh.createWritable({ keepExistingData: true });
         await writable.write({ type: 'write', data: dataBuf, position: file.size });

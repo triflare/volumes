@@ -1414,9 +1414,14 @@ describe('triflareVolumes — edge cases', () => {
       TYPE: 'RAM',
     });
 
-    // Should normalize volume name
+    // Assert mountAs success
+    const resultStatus = JSON.parse(_result);
+    assert.equal(resultStatus.status, 'success');
+
+    // Should normalize volume name by trimming and adding ://
     const volumes = JSON.parse(await extension.listVolumes());
-    assert.ok(volumes.some(v => v.includes('vol')));
+    const expectedNormalizedName = 'vol with spaces://';
+    assert.ok(volumes.some(v => v === expectedNormalizedName), `Expected to find '${expectedNormalizedName}' in volumes`);
   });
 
   it('respects deeply nested directory creation', async () => {
