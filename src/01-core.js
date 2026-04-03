@@ -444,7 +444,9 @@ class triflareVolumes {
     if (this.volumes[volName] && this.volumes[volName].type === 'OPFS') {
       this._opfsPersistPromises = this._opfsPersistPromises || {};
       const prev = this._opfsPersistPromises[volName] || Promise.resolve();
-      const next = prev.catch(() => {}).then(() => this._persistOPFSMetadata(volName))
+      const next = prev
+        .catch(() => {})
+        .then(() => this._persistOPFSMetadata(volName))
         .finally(() => {
           // Clean up stale entries if volume no longer exists or is no longer OPFS
           if (!this.volumes[volName] || this.volumes[volName].type !== 'OPFS') {
@@ -590,7 +592,9 @@ class triflareVolumes {
           // Keep public volume root perms in sync so remounts/imports preserve them
           if (key === volName) {
             if (!this.volumes[volName]) {
-              throw new Error(`INTERNAL_ERROR: Cannot restore permissions for unmounted volume ${volName}`);
+              throw new Error(
+                `INTERNAL_ERROR: Cannot restore permissions for unmounted volume ${volName}`
+              );
             }
             this.volumes[volName].perms = value;
           }
@@ -999,7 +1003,10 @@ class triflareVolumes {
           }));
         } catch (_e) {
           // Only fall back to _writePath for not-found errors; rethrow everything else
-          if (_e && (_e.name === 'NotFoundError' || (_e.message && _e.message.includes('NOT_FOUND')))) {
+          if (
+            _e &&
+            (_e.name === 'NotFoundError' || (_e.message && _e.message.includes('NOT_FOUND')))
+          ) {
             return this._writePath(args);
           }
           throw _e;
