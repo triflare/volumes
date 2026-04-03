@@ -949,7 +949,8 @@ class triflareVolumes {
             }
 
             const sizeDelta = dataBuf.byteLength - existingSize;
-            if (vol.size + sizeDelta > vol.sizeLimit) throw new Error('QUOTA_EXCEEDED: Volume full');
+            if (vol.size + sizeDelta > vol.sizeLimit)
+              throw new Error('QUOTA_EXCEEDED: Volume full');
 
             // Narrow the try/catch to only the getFileHandle call which can throw a TypeMismatch for directories.
             let fh;
@@ -1007,7 +1008,8 @@ class triflareVolumes {
 
         const node = parent.children.get(name);
         if (node.type === 'dir') throw new Error('TYPE_MISMATCH: Is a directory');
-        if (vol.size + dataBuf.byteLength > vol.sizeLimit) throw new Error('QUOTA_EXCEEDED: Volume full');
+        if (vol.size + dataBuf.byteLength > vol.sizeLimit)
+          throw new Error('QUOTA_EXCEEDED: Volume full');
 
         const newBuf = new Uint8Array(node.content.byteLength + dataBuf.byteLength);
         newBuf.set(node.content);
@@ -1045,7 +1047,8 @@ class triflareVolumes {
           throw new Error('PERMISSION_DENIED: Write permission denied');
 
         const file = await fh.getFile();
-        if (vol.size + dataBuf.byteLength > vol.sizeLimit) throw new Error('QUOTA_EXCEEDED: Volume full');
+        if (vol.size + dataBuf.byteLength > vol.sizeLimit)
+          throw new Error('QUOTA_EXCEEDED: Volume full');
 
         const writable = await fh.createWritable({ keepExistingData: true });
         await writable.write({ type: 'write', data: dataBuf, position: file.size });
@@ -1419,8 +1422,14 @@ class triflareVolumes {
         }
 
         // Handle Infinity sentinel and null for unlimited quotas
-        const importedSizeLimit = volData.sizeLimit === '__INFINITY__' || volData.sizeLimit === null ? Infinity : volData.sizeLimit;
-        const importedFileCountLimit = volData.fileCountLimit === '__INFINITY__' || volData.fileCountLimit === null ? Infinity : (volData.fileCountLimit ?? (importedSizeLimit === Infinity ? Infinity : 10000));
+        const importedSizeLimit =
+          volData.sizeLimit === '__INFINITY__' || volData.sizeLimit === null
+            ? Infinity
+            : volData.sizeLimit;
+        const importedFileCountLimit =
+          volData.fileCountLimit === '__INFINITY__' || volData.fileCountLimit === null
+            ? Infinity
+            : (volData.fileCountLimit ?? (importedSizeLimit === Infinity ? Infinity : 10000));
 
         result = await this.setSizeLimit({ VOL: volName, LIMIT: importedSizeLimit });
         status = JSON.parse(result);
