@@ -26,6 +26,131 @@ mock.extensions.register = instance => {
 // Mock __ASSET__ global before importing the extension
 globalThis.__ASSET__ = path => `data:image/svg+xml;base64,test${path}`;
 
+// Mock OPFS for deterministic testing
+class MockOPFSFileHandle {
+  constructor(name, content = new Uint8Array(0)) {
+    this.kind = 'file';
+    this.name = name;
+    this._content = content;
+  }
+  async getFile() {
+    return {
+      size: this._content.byteLength,
+      arrayBuffer: async () => this._content.buffer,
+      text: async () => new TextDecoder().decode(this._content),
+      type: 'application/octet-stream',
+    };
+  }
+  async createWritable(options = {}) {
+    const writable = {
+      _buffer: options.keepExistingData ? this._content : new Uint8Array(0),
+      write: async data => {
+        if (typeof data === 'object' && data.type === 'write') {
+          const newBuf = new Uint8Array(Math.max(writable._buffer.byteLength, data.position + data.data.byteLength));
+          newBuf.set(writable._buffer);
+          newBuf.set(new Uint8Array(data.data), data.position);
+          writable._buffer = newBuf;
+        } else {
+          writable._buffer = new Uint8Array(data);
+        }
+      },
+      close: async () => {
+        this._content = writable._buffer;
+      },
+    };
+    return writable;
+  }
+}
+
+class MockOPFSDirectoryHandle {
+  constructor(name) {
+    this.kind = 'directory';
+    this.name = name;
+    this._entries = new Map();
+  }
+  async getFileHandle(name, options = {}) {
+    if (this._entries.has(name)) {
+      const entry = this._entries.get(name);
+      if (entry.kind === 'directory') {
+        const err = new Error('TypeMismatchError');
+        err.name = 'TypeMismatchError';
+        throw err;
+      }
+      return entry;
+    }
+    if (options.create) {
+      const fh = new MockOPFSFileHandle(name);
+      this._entries.set(name, fh);
+      return fh;
+    }
+    const err = new Error('NotFoundError');
+    err.name = 'NotFoundError';
+    throw err;
+  }
+  async getDirectoryHandle(name, options = {}) {
+    if (this._entries.has(name)) {
+      const entry = this._entries.get(name);
+      if (entry.kind === 'file') {
+        const err = new Error('TypeMismatchError');
+        err.name = 'TypeMismatchError';
+        throw err;
+      }
+      return entry;
+    }
+    if (options.create) {
+      const dh = new MockOPFSDirectoryHandle(name);
+      this._entries.set(name, dh);
+      return dh;
+    }
+    const err = new Error('NotFoundError');
+    err.name = 'NotFoundError';
+    throw err;
+  }
+  async removeEntry(name, options = {}) {
+    if (!this._entries.has(name)) {
+      const err = new Error('NotFoundError');
+      err.name = 'NotFoundError';
+      throw err;
+    }
+    this._entries.delete(name);
+  }
+  async *values() {
+    for (const entry of this._entries.values()) {
+      yield entry;
+    }
+  }
+  async *entries() {
+    for (const [name, entry] of this._entries.entries()) {
+      yield [name, entry];
+    }
+  }
+  async *keys() {
+    for (const name of this._entries.keys()) {
+      yield name;
+    }
+  }
+}
+
+const opfsRoot = new MockOPFSDirectoryHandle('root');
+
+// Mock navigator.storage for OPFS
+if (!globalThis.navigator) {
+  Object.defineProperty(globalThis, 'navigator', {
+    value: {},
+    writable: true,
+    configurable: true,
+  });
+}
+if (!globalThis.navigator.storage) {
+  Object.defineProperty(globalThis.navigator, 'storage', {
+    value: {
+      getDirectory: async () => opfsRoot,
+    },
+    writable: true,
+    configurable: true,
+  });
+}
+
 // Top-level await: load the core module so registration fires.
 let importError;
 try {
@@ -36,6 +161,7 @@ try {
   if (importError) {
     restore();
     delete globalThis.__ASSET__;
+    delete globalThis.navigator;
     throw importError;
   }
 }
@@ -43,6 +169,10 @@ try {
 after(() => {
   restore();
   delete globalThis.__ASSET__;
+  // Clean up navigator mock if we created it
+  if (globalThis.navigator && globalThis.navigator.storage) {
+    delete globalThis.navigator.storage;
+  }
 });
 
 // ===== INITIALIZATION & REGISTRATION =====
@@ -1088,6 +1218,156 @@ describe('triflareVolumes — export/import', () => {
 
     // Old file should be gone (format clears volume, import adds back what's in export)
     assert.ok(!files.includes('old.txt'), 'old.txt should not exist after import');
+  });
+
+  it('imports volume with restrictive directory permissions correctly', async () => {
+    const vol = 'perm_import_test://';
+
+    // Create a volume with nested structure and restrictive permissions
+    await extension.mountAs({ VOL: vol, TYPE: 'RAM' });
+    await extension.fileWrite({ MODE: 'write', STRING: 'content1', PATH: vol + 'dir/file1.txt' });
+    await extension.fileWrite({ MODE: 'write', STRING: 'content2', PATH: vol + 'dir/file2.txt' });
+
+    // Set restrictive permissions on directory
+    await extension.setPermission({ PATH: vol + 'dir', PERM: 'create', VALUE: 'deny' });
+    await extension.setPermission({ PATH: vol + 'dir', PERM: 'write', VALUE: 'deny' });
+
+    // Export
+    const exported = await extension.exportVolume({ VOL: vol });
+    const data = JSON.parse(exported);
+
+    // Mount fresh target volume
+    await extension.mountAs({ VOL: 'perm_target://', TYPE: 'RAM' });
+
+    // Modify export for new volume
+    data['perm_target://'] = data[vol];
+    delete data[vol];
+
+    // Import should succeed despite restrictive permissions
+    const result = await extension.importVolume({
+      VOL: 'perm_target://',
+      JSON: JSON.stringify(data),
+    });
+    const status = JSON.parse(result);
+    assert.equal(status.status, 'success', 'import should succeed with restrictive permissions');
+
+    // Verify files were imported
+    const file1 = await extension.fileRead({ PATH: 'perm_target://dir/file1.txt', FORMAT: 'text' });
+    assert.equal(file1, 'content1', 'file1 should be imported');
+
+    const file2 = await extension.fileRead({ PATH: 'perm_target://dir/file2.txt', FORMAT: 'text' });
+    assert.equal(file2, 'content2', 'file2 should be imported');
+
+    // Verify permissions were applied correctly (should be restrictive after import)
+    const canCreate = await extension.checkPermission({ PATH: 'perm_target://dir', PERM: 'create' });
+    assert.equal(canCreate, false, 'create permission should be denied on imported directory');
+
+    const canWrite = await extension.checkPermission({ PATH: 'perm_target://dir', PERM: 'write' });
+    assert.equal(canWrite, false, 'write permission should be denied on imported directory');
+  });
+
+  it('imports and exports unlimited quotas correctly', async () => {
+    const vol = 'unlimited_test://';
+
+    // Mount OPFS volume with unlimited quotas
+    await extension.mountAs({ VOL: vol, TYPE: 'OPFS' });
+
+    // Verify unlimited quotas
+    const volObj = extension.volumes[vol];
+    assert.equal(volObj.sizeLimit, Infinity, 'OPFS should have unlimited size');
+    assert.equal(volObj.fileCountLimit, Infinity, 'OPFS should have unlimited file count');
+
+    // Add some content
+    await extension.fileWrite({ MODE: 'write', STRING: 'test data', PATH: vol + 'file.txt' });
+
+    // Export
+    const exported = await extension.exportVolume({ VOL: vol });
+    const data = JSON.parse(exported);
+
+    // Verify export represents unlimited quotas with sentinel
+    assert.equal(data[vol].sizeLimit, '__INFINITY__', 'exported sizeLimit should be __INFINITY__');
+    assert.equal(data[vol].fileCountLimit, '__INFINITY__', 'exported fileCountLimit should be __INFINITY__');
+
+    // Modify export for new volume (using same type so import can succeed)
+    data['unlimited_target://'] = data[vol];
+    // Keep the same type from the export
+    delete data[vol];
+
+    // Import (importVolume will mount the volume with the correct type from export data)
+    const result = await extension.importVolume({
+      VOL: 'unlimited_target://',
+      JSON: JSON.stringify(data),
+    });
+    const status = JSON.parse(result);
+    assert.equal(status.status, 'success', 'import should succeed');
+
+    // Verify imported volume has unlimited quotas
+    const targetVol = extension.volumes['unlimited_target://'];
+    assert.equal(targetVol.sizeLimit, Infinity, 'imported sizeLimit should be Infinity');
+    assert.equal(targetVol.fileCountLimit, Infinity, 'imported fileCountLimit should be Infinity');
+
+    // Verify content
+    const content = await extension.fileRead({ PATH: 'unlimited_target://file.txt', FORMAT: 'text' });
+    assert.equal(content, 'test data', 'content should be imported');
+  });
+
+  it('handles JSON null quotas as unlimited during import', async () => {
+    const vol = 'null_quota_test://';
+
+    // Create a simulated export with null quotas (as JSON.stringify(Infinity) would produce)
+    const exportData = {
+      [vol]: {
+        type: 'RAM',
+        sizeLimit: null,
+        fileCountLimit: null,
+        perms: {
+          read: true,
+          write: true,
+          create: true,
+          view: true,
+          delete: true,
+          control: true,
+        },
+        tree: {
+          type: 'dir',
+          children: {
+            'test.txt': {
+              type: 'file',
+              mime: 'text/plain',
+              content: btoa('hello'),
+              perms: {
+                read: true,
+                write: true,
+                create: true,
+                view: true,
+                delete: true,
+                control: true,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    // Mount target
+    await extension.mountAs({ VOL: vol, TYPE: 'RAM' });
+
+    // Import
+    const result = await extension.importVolume({
+      VOL: vol,
+      JSON: JSON.stringify(exportData),
+    });
+    const status = JSON.parse(result);
+    assert.equal(status.status, 'success', 'import should succeed with null quotas');
+
+    // Verify quotas are unlimited
+    const targetVol = extension.volumes[vol];
+    assert.equal(targetVol.sizeLimit, Infinity, 'null sizeLimit should become Infinity');
+    assert.equal(targetVol.fileCountLimit, Infinity, 'null fileCountLimit should become Infinity');
+
+    // Verify content
+    const content = await extension.fileRead({ PATH: vol + 'test.txt', FORMAT: 'text' });
+    assert.equal(content, 'hello', 'content should be imported');
   });
 });
 

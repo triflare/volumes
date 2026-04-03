@@ -771,8 +771,13 @@ class triflareVolumes {
       if (!volName.endsWith('://')) volName += '://';
       const vol = this.volumes[volName];
       if (!vol) throw new Error('NOT_FOUND: Volume not found');
-      const newLimit = Number(args.LIMIT);
-      if (isNaN(newLimit) || newLimit < 0)
+
+      // Require root control permission to change volume-wide quotas
+      if (!this._getPerms(volName, '').control)
+        throw new Error('PERMISSION_DENIED: Control permission denied');
+
+      const newLimit = args.LIMIT === Infinity ? Infinity : Number(args.LIMIT);
+      if ((newLimit !== Infinity && isNaN(newLimit)) || newLimit < 0)
         throw new Error('INVALID_ARGUMENT: Limit must be non-negative');
       vol.sizeLimit = newLimit;
       this.lastError = JSON.stringify({ status: 'success' });
@@ -789,8 +794,13 @@ class triflareVolumes {
       if (!volName.endsWith('://')) volName += '://';
       const vol = this.volumes[volName];
       if (!vol) throw new Error('NOT_FOUND: Volume not found');
-      const newLimit = Number(args.LIMIT);
-      if (isNaN(newLimit) || newLimit < 0)
+
+      // Require root control permission to change volume-wide quotas
+      if (!this._getPerms(volName, '').control)
+        throw new Error('PERMISSION_DENIED: Control permission denied');
+
+      const newLimit = args.LIMIT === Infinity ? Infinity : Number(args.LIMIT);
+      if ((newLimit !== Infinity && isNaN(newLimit)) || newLimit < 0)
         throw new Error('INVALID_ARGUMENT: Limit must be non-negative');
       vol.fileCountLimit = newLimit;
       this.lastError = JSON.stringify({ status: 'success' });
@@ -903,70 +913,73 @@ class triflareVolumes {
         vol.size += sizeDelta;
         if (isNew) vol.fileCount++;
       } else {
-        const { parent, name } = await this._resolveOPFSNode(volName, relPath, {
-          parentOnly: true,
-          createDirs: true,
-        });
-        let existingSize = 0;
-        let isNew = false;
-        try {
-          existingSize = (await (await parent.getFileHandle(name)).getFile()).size;
-        } catch (_e) {
-          if (_e && _e.name === 'NotFoundError') {
-            isNew = true;
-          } else if (_e && _e.name === 'TypeMismatchError') {
-            throw new Error('TYPE_MISMATCH: Path is a directory', { cause: _e });
-          } else {
-            throw _e;
-          }
-        }
-
-        if (!isNew) {
-          if (!this._getPerms(volName, relPath).write)
-            throw new Error('PERMISSION_DENIED: Write permission denied');
-        } else {
-          const parentRelPath = relPath.split('/').slice(0, -1).join('/');
-          if (!this._getPerms(volName, parentRelPath).create)
-            throw new Error('PERMISSION_DENIED: Create permission denied on parent directory');
-          if (vol.fileCount + 1 > vol.fileCountLimit)
-            throw new Error('QUOTA_EXCEEDED: File count limit reached');
-        }
-
-        const sizeDelta = dataBuf.byteLength - existingSize;
-        if (vol.size + sizeDelta > vol.sizeLimit) throw new Error('QUOTA_EXCEEDED: Volume full');
-
-        // Narrow the try/catch to only the getFileHandle call which can throw a TypeMismatch for directories.
-        let fh;
-        try {
-          fh = await parent.getFileHandle(name, { create: true });
-        } catch (_e) {
-          if (_e.name === 'TypeMismatchError')
-            throw new Error('TYPE_MISMATCH: Target is likely a directory', { cause: _e });
-          throw _e;
-        }
-
-        const writable = await fh.createWritable();
-        await writable.write(dataBuf);
-        await writable.close();
-
-        const metaKey = `${volName}${relPath}`;
-        this._opfsMeta.set(metaKey, mime);
-        vol.size += sizeDelta;
-        if (isNew) vol.fileCount++;
-
-        // Persist metadata after write (serialize per-volume to avoid interleaving)
+        // Serialize entire OPFS mutation per-volume to prevent races
         this._opfsPersistPromises = this._opfsPersistPromises || {};
         const prev = this._opfsPersistPromises[volName] || Promise.resolve();
         const next = prev
           .catch(() => {})
-          .then(() => this._persistOPFSMetadata(volName))
+          .then(async () => {
+            const { parent, name } = await this._resolveOPFSNode(volName, relPath, {
+              parentOnly: true,
+              createDirs: true,
+            });
+            let existingSize = 0;
+            let isNew = false;
+            try {
+              existingSize = (await (await parent.getFileHandle(name)).getFile()).size;
+            } catch (_e) {
+              if (_e && _e.name === 'NotFoundError') {
+                isNew = true;
+              } else if (_e && _e.name === 'TypeMismatchError') {
+                throw new Error('TYPE_MISMATCH: Path is a directory', { cause: _e });
+              } else {
+                throw _e;
+              }
+            }
+
+            if (!isNew) {
+              if (!this._getPerms(volName, relPath).write)
+                throw new Error('PERMISSION_DENIED: Write permission denied');
+            } else {
+              const parentRelPath = relPath.split('/').slice(0, -1).join('/');
+              if (!this._getPerms(volName, parentRelPath).create)
+                throw new Error('PERMISSION_DENIED: Create permission denied on parent directory');
+              if (vol.fileCount + 1 > vol.fileCountLimit)
+                throw new Error('QUOTA_EXCEEDED: File count limit reached');
+            }
+
+            const sizeDelta = dataBuf.byteLength - existingSize;
+            if (vol.size + sizeDelta > vol.sizeLimit) throw new Error('QUOTA_EXCEEDED: Volume full');
+
+            // Narrow the try/catch to only the getFileHandle call which can throw a TypeMismatch for directories.
+            let fh;
+            try {
+              fh = await parent.getFileHandle(name, { create: true });
+            } catch (_e) {
+              if (_e.name === 'TypeMismatchError')
+                throw new Error('TYPE_MISMATCH: Target is likely a directory', { cause: _e });
+              throw _e;
+            }
+
+            const writable = await fh.createWritable();
+            await writable.write(dataBuf);
+            await writable.close();
+
+            const metaKey = `${volName}${relPath}`;
+            this._opfsMeta.set(metaKey, mime);
+            vol.size += sizeDelta;
+            if (isNew) vol.fileCount++;
+
+            // Persist metadata after write
+            await this._persistOPFSMetadata(volName);
+          })
           .finally(() => {
             if (this._opfsPersistPromises[volName] === next) {
               delete this._opfsPersistPromises[volName];
             }
           });
         this._opfsPersistPromises[volName] = next;
-        await next.catch(() => {});
+        await next;
       }
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
@@ -1362,8 +1375,8 @@ class triflareVolumes {
 
         exportObj[volName] = {
           type: vol.type,
-          sizeLimit: vol.sizeLimit,
-          fileCountLimit: vol.fileCountLimit,
+          sizeLimit: vol.sizeLimit === Infinity ? '__INFINITY__' : vol.sizeLimit,
+          fileCountLimit: vol.fileCountLimit === Infinity ? '__INFINITY__' : vol.fileCountLimit,
           perms: vol.perms,
           tree: tree,
         };
@@ -1405,7 +1418,11 @@ class triflareVolumes {
           throw new Error('Failed to mount volume: ' + status.message);
         }
 
-        result = await this.setSizeLimit({ VOL: volName, LIMIT: volData.sizeLimit });
+        // Handle Infinity sentinel and null for unlimited quotas
+        const importedSizeLimit = volData.sizeLimit === '__INFINITY__' || volData.sizeLimit === null ? Infinity : volData.sizeLimit;
+        const importedFileCountLimit = volData.fileCountLimit === '__INFINITY__' || volData.fileCountLimit === null ? Infinity : (volData.fileCountLimit ?? (importedSizeLimit === Infinity ? Infinity : 10000));
+
+        result = await this.setSizeLimit({ VOL: volName, LIMIT: importedSizeLimit });
         status = JSON.parse(result);
         if (status.status !== 'success') {
           if (this.volumes[volName]) this.volumes[volName].lastError = result;
@@ -1414,7 +1431,7 @@ class triflareVolumes {
 
         result = await this.setFileCountLimit({
           VOL: volName,
-          LIMIT: volData.fileCountLimit ?? 10000,
+          LIMIT: importedFileCountLimit,
         });
         status = JSON.parse(result);
         if (status.status !== 'success') {
@@ -1422,15 +1439,7 @@ class triflareVolumes {
           throw new Error('Failed to set file count limit: ' + status.message);
         }
 
-        this.volumes[volName].perms = volData.perms || {
-          read: true,
-          write: true,
-          create: true,
-          view: true,
-          delete: true,
-          control: true,
-        };
-
+        // Format first with permissive root perms to allow structure creation
         result = await this.formatVolume({ VOL: volName });
         status = JSON.parse(result);
         if (status.status !== 'success') {
@@ -1438,16 +1447,14 @@ class triflareVolumes {
           throw new Error('Failed to format volume: ' + status.message);
         }
 
-        if (this.volumes[volName].type === 'OPFS') {
-          const metaKey = `${volName}`;
-          this._opfsPerms.set(metaKey, this.volumes[volName].perms);
-        }
+        // Track permissions to apply bottom-up after structure is created
+        const permsToApply = [];
 
         const processNode = async (name, nodeData, currentPath) => {
           const childRelPath = currentPath ? `${currentPath}/${name}` : name;
           if (nodeData.type === 'dir') {
             if (childRelPath) {
-              // Internal fast-path for creation bypassing standard permission checks to restore fully
+              // Create directory structure first
               if (this.volumes[volName].type === 'RAM') {
                 this._traverseRAM(volName, childRelPath, { createDirs: true, parentOnly: false });
               } else {
@@ -1457,11 +1464,11 @@ class triflareVolumes {
                 });
               }
             }
+            // Defer permission application
             if (nodeData.perms && childRelPath) {
-              for (const [k, v] of Object.entries(nodeData.perms)) {
-                await this._setPerm(volName, childRelPath, k, v);
-              }
+              permsToApply.push({ path: childRelPath, perms: nodeData.perms });
             }
+            // Recurse into children first
             if (nodeData.children) {
               for (const [childName, childNode] of Object.entries(nodeData.children)) {
                 await processNode(childName, childNode, childRelPath);
@@ -1472,29 +1479,15 @@ class triflareVolumes {
             // Overwrite path directly using fileWrite string format
             const writeArgs = { MODE: 'write', STRING: dataUri, PATH: `${volName}${childRelPath}` };
 
-            // Temporarily elevate perms to ensure we can restore files into restricted folders
-            const originalWrite = this._getPerms(volName, currentPath).write;
-            const originalCreate = this._getPerms(volName, currentPath).create;
-
-            try {
-              await this._setPerm(volName, currentPath, 'write', true);
-              await this._setPerm(volName, currentPath, 'create', true);
-
-              const result = await this._writePath(writeArgs);
-              const status = JSON.parse(result);
-              if (status.status !== 'success') {
-                throw new Error('Failed to write file: ' + status.message);
-              }
-            } finally {
-              // Always restore permissions
-              await this._setPerm(volName, currentPath, 'write', originalWrite);
-              await this._setPerm(volName, currentPath, 'create', originalCreate);
+            const result = await this._writePath(writeArgs);
+            const status = JSON.parse(result);
+            if (status.status !== 'success') {
+              throw new Error('Failed to write file: ' + status.message);
             }
 
+            // Defer file permission application
             if (nodeData.perms) {
-              // Restore individual file permissions manually
-              for (const [k, v] of Object.entries(nodeData.perms))
-                await this._setPerm(volName, childRelPath, k, v);
+              permsToApply.push({ path: childRelPath, perms: nodeData.perms });
             }
           }
         };
@@ -1503,6 +1496,34 @@ class triflareVolumes {
           for (const [name, childNode] of Object.entries(volData.tree.children)) {
             await processNode(name, childNode, '');
           }
+        }
+
+        // Apply all permissions bottom-up (deepest first)
+        permsToApply.sort((a, b) => b.path.split('/').length - a.path.split('/').length);
+        for (const { path, perms } of permsToApply) {
+          for (const [k, v] of Object.entries(perms)) {
+            await this._setPerm(volName, path, k, v);
+          }
+          // Update _opfsPerms for OPFS volumes
+          if (this.volumes[volName].type === 'OPFS') {
+            const metaKey = `${volName}${path}`;
+            this._opfsPerms.set(metaKey, perms);
+          }
+        }
+
+        // Apply root permissions last
+        this.volumes[volName].perms = volData.perms || {
+          read: true,
+          write: true,
+          create: true,
+          view: true,
+          delete: true,
+          control: true,
+        };
+
+        if (this.volumes[volName].type === 'OPFS') {
+          const metaKey = `${volName}`;
+          this._opfsPerms.set(metaKey, this.volumes[volName].perms);
         }
       }
 
