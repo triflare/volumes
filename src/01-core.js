@@ -35,8 +35,9 @@ class triflareVolumes {
         {
           opcode: 'mountAs',
           blockType: Scratch.BlockType.COMMAND,
-          text: Scratch.translate('mount [VOL] as [TYPE]'),
+          text: Scratch.translate('[ACTION] [VOL] as [TYPE]'),
           arguments: {
+            ACTION: { type: Scratch.ArgumentType.STRING, menu: 'mountAction' },
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'myfs://' },
             TYPE: { type: Scratch.ArgumentType.STRING, menu: 'volTypes' },
           },
@@ -44,6 +45,7 @@ class triflareVolumes {
         {
           opcode: 'formatVolume',
           blockType: Scratch.BlockType.COMMAND,
+          hideFromPalette: true,
           text: Scratch.translate('format volume [VOL]'),
           arguments: {
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
@@ -192,6 +194,7 @@ class triflareVolumes {
         },
       ],
       menus: {
+        mountAction: { acceptReporters: false, items: ['mount', 'unmount', 'format'] },
         volTypes: { acceptReporters: true, items: ['OPFS', 'RAM'] },
         writeMode: { acceptReporters: true, items: ['write', 'append'] },
         readFormat: { acceptReporters: true, items: ['text', 'Data URI'] },
@@ -765,6 +768,29 @@ class triflareVolumes {
 
   async mountAs(args) {
     await this._ready;
+    const action = args.ACTION || 'mount';
+    if (action === 'unmount') {
+      try {
+        let volName = args.VOL.trim();
+        if (!volName.endsWith('://')) volName += '://';
+        if (!this.volumes[volName]) throw new Error('NOT_FOUND: Volume not found');
+
+        // Clean up in-memory metadata for the volume
+        for (const key of this._opfsMeta.keys())
+          if (key.startsWith(volName)) this._opfsMeta.delete(key);
+        for (const key of this._opfsPerms.keys())
+          if (key.startsWith(volName)) this._opfsPerms.delete(key);
+
+        delete this.volumes[volName];
+        this.lastError = JSON.stringify({ status: 'success' });
+        return this.lastError;
+      } catch (e) {
+        return this._handleError(e);
+      }
+    }
+    if (action === 'format') {
+      return this.formatVolume(args);
+    }
     try {
       let volName = args.VOL.trim();
       if (!volName.endsWith('://')) volName += '://';
