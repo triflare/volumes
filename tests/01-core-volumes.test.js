@@ -297,6 +297,51 @@ describe('triflareVolumes — volume mounting', () => {
     });
     assert.equal(hasRead, true);
   });
+
+  it('unmounts a volume via mountAs ACTION', async () => {
+    const vol = 'unmount_test://';
+    await extension.mountAs({ VOL: vol, TYPE: 'RAM' });
+
+    // Seed internal maps to verify cleanup
+    extension._opfsMeta.set(`${vol}somefile.txt`, 'text/plain');
+    extension._opfsPerms.set(`${vol}somefile.txt`, { read: true });
+
+    const res = await extension.mountAs({ ACTION: 'unmount', VOL: vol });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'success');
+
+    const volumes = JSON.parse(await extension.listVolumes());
+    assert.ok(!volumes.includes(vol), 'volume should be unmounted');
+
+    for (const key of extension._opfsMeta.keys()) {
+      assert.ok(!key.startsWith(vol));
+    }
+    for (const key of extension._opfsPerms.keys()) {
+      assert.ok(!key.startsWith(vol));
+    }
+
+    const last = JSON.parse(extension.lastError);
+    assert.equal(last.status, 'success');
+  });
+
+  it('delegates format via mountAs ACTION to formatVolume', async () => {
+    const vol = 'format_action_test://';
+    await extension.mountAs({ VOL: vol, TYPE: 'RAM' });
+
+    let called = false;
+    const originalFormat = extension.formatVolume;
+    extension.formatVolume = async args => {
+      called = true;
+      return JSON.stringify({ status: 'success' });
+    };
+
+    const res = await extension.mountAs({ ACTION: 'format', VOL: vol, TYPE: 'RAM' });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'success');
+    assert.equal(called, true);
+
+    extension.formatVolume = originalFormat;
+  });
 });
 
 // ===== FILE WRITE OPERATIONS =====
