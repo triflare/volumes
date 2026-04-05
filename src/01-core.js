@@ -42,9 +42,17 @@ class triflareVolumes {
           },
         },
         {
+          opcode: 'unmount',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('unmount [VOL]'),
+          arguments: {
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'myfs://' },
+          },
+        },
+        {
           opcode: 'formatVolume',
           blockType: Scratch.BlockType.COMMAND,
-          text: Scratch.translate('format volume [VOL]'),
+          text: Scratch.translate('format [VOL]'),
           arguments: {
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
           },
@@ -192,6 +200,7 @@ class triflareVolumes {
         },
       ],
       menus: {
+        mountAction: { acceptReporters: false, items: ['mount', 'unmount', 'format'] },
         volTypes: { acceptReporters: true, items: ['OPFS', 'RAM'] },
         writeMode: { acceptReporters: true, items: ['write', 'append'] },
         readFormat: { acceptReporters: true, items: ['text', 'Data URI'] },
@@ -765,6 +774,39 @@ class triflareVolumes {
 
   async mountAs(args) {
     await this._ready;
+    const action = args.ACTION || 'mount';
+
+    // Validate action to avoid silent fallthrough on typos like 'unmnt'
+    if (!['mount', 'unmount', 'format'].includes(action)) {
+      return this._handleError(new Error(`INVALID_ARGUMENT: Invalid ACTION: ${action}`));
+    }
+
+    if (action === 'unmount') {
+      try {
+        let volName = args.VOL.trim();
+        if (!volName.endsWith('://')) volName += '://';
+        if (!this.volumes[volName]) throw new Error('NOT_FOUND: Volume not found');
+
+        // NOTE: Unmount intentionally preserves persistent OPFS on-disk data.
+        // It removes only in-memory references (metadata, perms, mounted entries).
+        // Use the 'format' action to destroy persistent OPFS contents.
+        for (const key of this._opfsMeta.keys())
+          if (key.startsWith(volName)) this._opfsMeta.delete(key);
+        for (const key of this._opfsPerms.keys())
+          if (key.startsWith(volName)) this._opfsPerms.delete(key);
+
+        delete this.volumes[volName];
+        this._pathCache.clear(); // Purge cached paths for removed volume
+        this.lastError = JSON.stringify({ status: 'success' });
+        return this.lastError;
+      } catch (e) {
+        return this._handleError(e);
+      }
+    }
+
+    if (action === 'format') {
+      return this.formatVolume(args);
+    }
     try {
       let volName = args.VOL.trim();
       if (!volName.endsWith('://')) volName += '://';
@@ -822,6 +864,11 @@ class triflareVolumes {
     } catch (e) {
       return this._handleError(e);
     }
+  }
+
+  async unmount(args) {
+    // Delegate to mountAs for consistent behavior and shared validation/error handling
+    return this.mountAs({ ACTION: 'unmount', VOL: args.VOL });
   }
 
   async setSizeLimit(args) {
