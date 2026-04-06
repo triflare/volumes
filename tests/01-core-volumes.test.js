@@ -1990,8 +1990,11 @@ describe('triflareVolumes — watcher events', () => {
       await extension.fileWrite({ MODE: 'write', STRING: '4', PATH: vol + 'p4.txt' });
 
       const events = JSON.parse(await extension.pollWatcherEvents({ WATCHER: newWatcher }));
-      assert.ok(events.length >= 3);
-      assert.ok(events.some(e => e.path === vol + 'p4.txt'));
+      assert.equal(events.length, 3);
+      assert.deepEqual(
+        events.map(e => e.path),
+        [vol + 'p2.txt', vol + 'p3.txt', vol + 'p4.txt']
+      );
       await extension.unwatchPath({ WATCHER: newWatcher });
     } finally {
       extension._maxEventLogEntries = originalLimit;

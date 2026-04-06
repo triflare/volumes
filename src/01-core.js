@@ -674,23 +674,26 @@ class triflareVolumes {
     this._pruneEventLog();
   }
 
+  _getWatcherCursorEventId(watcher) {
+    if (!watcher) return 0;
+    if (Number.isFinite(watcher.cursorEventId)) return watcher.cursorEventId;
+    if (Number.isFinite(watcher.cursor)) return watcher.cursor;
+    return 0;
+  }
+
   _pruneEventLog() {
     if (!this._eventLog.length) return;
 
     let minCursorEventId = Infinity;
     for (const watcher of this._watchers.values()) {
-      const cursorEventId = Number.isFinite(watcher.cursorEventId)
-        ? watcher.cursorEventId
-        : Number.isFinite(watcher.cursor)
-          ? watcher.cursor
-          : 0;
+      const cursorEventId = this._getWatcherCursorEventId(watcher);
       if (cursorEventId < minCursorEventId) minCursorEventId = cursorEventId;
     }
 
     if (Number.isFinite(minCursorEventId) && minCursorEventId > 0) {
-      while (this._eventLog.length && this._eventLog[0].id <= minCursorEventId) {
-        this._eventLog.shift();
-      }
+      const firstKeepIndex = this._eventLog.findIndex(ev => ev.id > minCursorEventId);
+      if (firstKeepIndex === -1) this._eventLog.length = 0;
+      else if (firstKeepIndex > 0) this._eventLog.splice(0, firstKeepIndex);
     }
 
     const overflow = this._eventLog.length - this._maxEventLogEntries;
@@ -699,11 +702,7 @@ class triflareVolumes {
     const droppedUntilEventId = this._eventLog[overflow - 1].id;
     this._eventLog.splice(0, overflow);
     for (const watcher of this._watchers.values()) {
-      const cursorEventId = Number.isFinite(watcher.cursorEventId)
-        ? watcher.cursorEventId
-        : Number.isFinite(watcher.cursor)
-          ? watcher.cursor
-          : 0;
+      const cursorEventId = this._getWatcherCursorEventId(watcher);
       if (cursorEventId < droppedUntilEventId) watcher.cursorEventId = droppedUntilEventId;
     }
   }
@@ -2258,11 +2257,7 @@ class triflareVolumes {
       const watcher = this._watchers.get(watcherId);
       if (!watcher) throw new Error(`NOT_FOUND: Watcher ${watcherId} does not exist`);
       const events = [];
-      const cursorEventId = Number.isFinite(watcher.cursorEventId)
-        ? watcher.cursorEventId
-        : Number.isFinite(watcher.cursor)
-          ? watcher.cursor
-          : 0;
+      const cursorEventId = this._getWatcherCursorEventId(watcher);
       for (const ev of this._eventLog) {
         if (ev.id <= cursorEventId) continue;
         if (this._watcherMatchesEvent(watcher, ev)) events.push(ev);
