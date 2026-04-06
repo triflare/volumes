@@ -702,10 +702,7 @@ class triflareVolumes {
       if (codePoint <= 0x7f) bytes += 1;
       else if (codePoint <= 0x7ff) bytes += 2;
       else if (codePoint <= 0xffff) bytes += 3;
-      else {
-        bytes += 4;
-        i++;
-      }
+      else bytes += 4;
     }
     return bytes;
   }
@@ -2080,9 +2077,13 @@ class triflareVolumes {
       const exportJson = await this.exportVolume({ VOL: volName });
       const snapshotBytes = this._utf8ByteLength(exportJson);
       if (snapshotBytes > this._maxTransactionSnapshotBytes) {
-        const limitMb = Math.floor(this._maxTransactionSnapshotBytes / (1024 * 1024));
+        const limitMb = this._maxTransactionSnapshotBytes / (1024 * 1024);
+        const limitText =
+          this._maxTransactionSnapshotBytes < 1024 * 1024
+            ? `${this._maxTransactionSnapshotBytes} bytes`
+            : `${Number(limitMb.toFixed(2))} MB`;
         throw new Error(
-          `INVALID_ARGUMENT: Exported transaction snapshot exceeds ${limitMb} MB limit`
+          `INVALID_ARGUMENT: Exported transaction snapshot exceeds ${limitText} limit`
         );
       }
       const parsed = JSON.parse(exportJson);
