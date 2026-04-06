@@ -7,6 +7,7 @@ This page covers the parts of Volumes that are most useful once you are comforta
 RAM volumes are best for temporary data, scratch space, and tests. They are fast, but the contents disappear when the page reloads.
 
 OPFS volumes are best when you want data to stay available after reloads. They rely on browser support for the Origin Private File System.
+Volumes now fails fast during initialization when OPFS is unavailable, the context is insecure, or it is running inside a sandboxed frame. In browser contexts where `alert()` is available, it also displays an alert message before failing.
 
 ## Permissions
 
@@ -45,6 +46,40 @@ A few important details:
 - The target volume is formatted first.
 - You can export all mounted volumes at once.
 - If you want to import into a different volume name, update the JSON key to match the destination volume.
+
+## Transactions
+
+Transactions let you stage multiple changes and then either keep or discard them:
+
+- Begin a transaction before a sequence of risky writes or deletes.
+- Commit when all operations succeed.
+- Roll back to restore the exact pre-transaction state.
+
+Transactions are tracked per volume and only one transaction can be active per volume at a time.
+The pre-transaction state is exported and kept in memory (same mechanism as snapshots), so active transactions on large volumes can consume comparable memory. Keep transactions small or commit frequently, and see the Snapshots section below for related memory details and limits.
+
+## Snapshots
+
+Snapshots are named restore points for a volume:
+
+- Create a snapshot before migrations or large imports.
+- Restore any saved snapshot later.
+- Delete snapshots you no longer need.
+- Diff two snapshots to see added, removed, and changed paths.
+
+Snapshots are stored in-memory for the current extension session. To avoid unbounded memory use, snapshots are capped per volume (default `25`, configurable in code via `_maxSnapshotsPerVolume`). When the cap is reached, creating a new snapshot with a new name returns a quota error until you delete older snapshots.
+Transactions use the same in-memory export format and also enforce a transaction snapshot size limit (default `50 MB`, configurable in code via `_maxTransactionSnapshotBytes`).
+
+## Watchers and events
+
+Watchers provide a polling-based event stream for filesystem activity:
+
+- Watch a path with immediate or recursive depth.
+- Poll by watcher ID to get new events since the previous poll.
+- Unwatch when no longer needed.
+
+Events are emitted for writes, appends, deletes, permission changes, format/import operations, and transaction lifecycle changes.
+Event history is also bounded in-memory (default `1000`, configurable in code via `_maxEventLogEntries`) and older events are pruned as watchers advance, so stale subscribers should poll regularly.
 
 ## File details
 

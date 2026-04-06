@@ -2,6 +2,7 @@ class triflareVolumes {
   /* global __ASSET__ */
 
   constructor() {
+    this._assertRuntimeSupport();
     this.volumes = {};
     this.lastError = JSON.stringify({ status: 'success' });
     // Toggle verbose logging for Volumes (no-op when false)
@@ -13,6 +14,19 @@ class triflareVolumes {
     this._opfsPerms = new Map(); // Maps volName:relPath -> perms object
     // Memoization cache for fast path parsing
     this._pathCache = new Map();
+    // Active transaction snapshots (one active transaction per volume)
+    this._transactions = new Map(); // volName -> { name, snapshot, startedAt }
+    this._maxTransactionSnapshotBytes = 50 * 1024 * 1024;
+    // Named point-in-time snapshots per volume
+    this._snapshots = new Map(); // volName -> Map(snapshotName, exportJSON)
+    this._maxSnapshotsPerVolume = 25;
+    // In-memory event log for watch subscriptions
+    this._eventLog = [];
+    this._maxEventLogEntries = 1000;
+    this._nextEventId = 1;
+    this._watchers = new Map(); // watcherId -> { id, volName, relPath, recursive, cursor }
+    this._nextWatcherId = 1;
+    this._textEncoder = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
 
     this._ready = this._initVolumes().catch(e => {
       this.lastError = JSON.stringify({
@@ -184,6 +198,120 @@ class triflareVolumes {
           },
         },
 
+        // --- Transactions ---
+        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Transactions') },
+        {
+          opcode: 'beginTransaction',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('begin transaction [TXN] on [VOL]'),
+          arguments: {
+            TXN: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' },
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
+          },
+        },
+        {
+          opcode: 'commitTransaction',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('commit transaction on [VOL]'),
+          arguments: {
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
+          },
+        },
+        {
+          opcode: 'rollbackTransaction',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('rollback transaction on [VOL]'),
+          arguments: {
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
+          },
+        },
+        {
+          opcode: 'listTransactions',
+          blockType: Scratch.BlockType.REPORTER,
+          text: Scratch.translate('list active transactions'),
+          disableMonitor: false,
+        },
+
+        // --- Snapshots ---
+        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Snapshots') },
+        {
+          opcode: 'createSnapshot',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('create snapshot [SNAP] of [VOL]'),
+          arguments: {
+            SNAP: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap1' },
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
+          },
+        },
+        {
+          opcode: 'restoreSnapshot',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('restore snapshot [SNAP] on [VOL]'),
+          arguments: {
+            SNAP: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap1' },
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
+          },
+        },
+        {
+          opcode: 'deleteSnapshot',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('delete snapshot [SNAP] on [VOL]'),
+          arguments: {
+            SNAP: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap1' },
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
+          },
+        },
+        {
+          opcode: 'diffSnapshots',
+          blockType: Scratch.BlockType.REPORTER,
+          text: Scratch.translate('diff snapshots [A] and [B] on [VOL]'),
+          arguments: {
+            A: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap1' },
+            B: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap2' },
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
+          },
+          disableMonitor: false,
+        },
+        {
+          opcode: 'listSnapshots',
+          blockType: Scratch.BlockType.REPORTER,
+          text: Scratch.translate('list snapshots on [VOL]'),
+          arguments: {
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
+          },
+          disableMonitor: false,
+        },
+
+        // --- Watchers ---
+        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Watchers') },
+        {
+          opcode: 'watchPath',
+          blockType: Scratch.BlockType.REPORTER,
+          text: Scratch.translate('watch [PATH] depth [DEPTH]'),
+          arguments: {
+            PATH: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
+            DEPTH: { type: Scratch.ArgumentType.STRING, menu: 'listDepth' },
+          },
+          disableMonitor: false,
+        },
+        {
+          opcode: 'unwatchPath',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('unwatch [WATCHER]'),
+          arguments: {
+            WATCHER: { type: Scratch.ArgumentType.STRING, defaultValue: '1' },
+          },
+        },
+        {
+          opcode: 'pollWatcherEvents',
+          blockType: Scratch.BlockType.REPORTER,
+          text: Scratch.translate('poll events for [WATCHER]'),
+          arguments: {
+            WATCHER: { type: Scratch.ArgumentType.STRING, defaultValue: '1' },
+          },
+          disableMonitor: false,
+        },
+
         // --- Diagnostics ---
         { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Diagnostics') },
         {
@@ -261,6 +389,34 @@ class triflareVolumes {
   }
 
   // --- Utility Functions ---
+  _assertRuntimeSupport() {
+    let unsupportedReason = '';
+    if (!this._supportsOPFS()) {
+      unsupportedReason =
+        'Volumes requires OPFS support. This usually means running in an insecure or unsupported context.';
+    } else if (typeof globalThis.isSecureContext === 'boolean' && !globalThis.isSecureContext) {
+      unsupportedReason = 'Volumes requires a secure context (HTTPS).';
+    } else if (
+      typeof window !== 'undefined' &&
+      window.frameElement &&
+      typeof window.frameElement.hasAttribute === 'function' &&
+      window.frameElement.hasAttribute('sandbox')
+    ) {
+      unsupportedReason = 'Volumes cannot run in a sandboxed frame.';
+    }
+
+    if (!unsupportedReason) return;
+
+    if (typeof globalThis.alert === 'function') {
+      try {
+        globalThis.alert(unsupportedReason);
+      } catch (_) {
+        // Ignore alert failures in restricted runtimes.
+      }
+    }
+    throw new Error(`INTERNAL_ERROR: ${unsupportedReason}`);
+  }
+
   _supportsOPFS() {
     return (
       typeof navigator !== 'undefined' &&
@@ -527,6 +683,109 @@ class triflareVolumes {
     }
 
     return Promise.resolve();
+  }
+
+  _normalizeVolumeName(volInput) {
+    let volName = String(volInput || '').trim();
+    if (!volName.endsWith('://')) volName += '://';
+    return volName;
+  }
+
+  _utf8ByteLength(value) {
+    const input = String(value || '');
+    if (this._textEncoder) {
+      return this._textEncoder.encode(input).length;
+    }
+    let bytes = 0;
+    for (let i = 0; i < input.length; i++) {
+      const codePoint = input.codePointAt(i);
+      if (codePoint <= 0x7f) bytes += 1;
+      else if (codePoint <= 0x7ff) bytes += 2;
+      else if (codePoint <= 0xffff) bytes += 3;
+      else bytes += 4;
+    }
+    return bytes;
+  }
+
+  _emitEvent(type, volName, relPath = '', detail = {}) {
+    const event = {
+      id: this._nextEventId++,
+      ts: Date.now(),
+      type: String(type),
+      volume: volName,
+      relPath: relPath || '',
+      path: volName + (relPath || ''),
+      detail: detail || {},
+    };
+    this._eventLog.push(event);
+    this._pruneEventLog();
+  }
+
+  _getWatcherCursorEventId(watcher) {
+    if (!watcher) return 0;
+    if (Number.isFinite(watcher.cursorEventId)) return watcher.cursorEventId;
+    if (Number.isFinite(watcher.cursor)) return watcher.cursor;
+    return 0;
+  }
+
+  _pruneEventLog() {
+    if (!this._eventLog.length) return;
+
+    let minCursorEventId = Infinity;
+    for (const watcher of this._watchers.values()) {
+      const cursorEventId = this._getWatcherCursorEventId(watcher);
+      if (cursorEventId < minCursorEventId) minCursorEventId = cursorEventId;
+    }
+
+    if (Number.isFinite(minCursorEventId) && minCursorEventId > 0) {
+      const firstKeepIndex = this._eventLog.findIndex(ev => ev.id > minCursorEventId);
+      if (firstKeepIndex === -1) this._eventLog.length = 0;
+      else if (firstKeepIndex > 0) this._eventLog.splice(0, firstKeepIndex);
+    }
+
+    const overflow = this._eventLog.length - this._maxEventLogEntries;
+    if (overflow <= 0) return;
+
+    const droppedUntilEventId = this._eventLog[overflow - 1].id;
+    this._eventLog.splice(0, overflow);
+    for (const watcher of this._watchers.values()) {
+      const cursorEventId = this._getWatcherCursorEventId(watcher);
+      if (cursorEventId < droppedUntilEventId) watcher.cursorEventId = droppedUntilEventId;
+    }
+  }
+
+  _watcherMatchesEvent(watcher, event) {
+    if (!watcher || !event || watcher.volName !== event.volume) return false;
+    const w = watcher.relPath || '';
+    const e = event.relPath || '';
+    if (!w) {
+      if (watcher.recursive) return true;
+      if (!e) return true;
+      return e.split('/').filter(Boolean).length <= 1;
+    }
+    if (watcher.recursive) return e === w || e.startsWith(w + '/');
+    if (e === w) return true;
+    return e.split('/').slice(0, -1).join('/') === w;
+  }
+
+  _flattenTreeForDiff(node, currentPath = '', output = new Map()) {
+    if (!node || typeof node !== 'object') return output;
+    const pathKey = currentPath || '/';
+    if (node.type === 'file') {
+      output.set(
+        pathKey,
+        `file|${node.mime || ''}|${node.content || ''}|${JSON.stringify(node.perms || {})}`
+      );
+      return output;
+    }
+    output.set(pathKey, `dir|${JSON.stringify(node.perms || {})}`);
+    if (node.children && typeof node.children === 'object') {
+      for (const [name, child] of Object.entries(node.children)) {
+        const childPath = currentPath ? `${currentPath}/${name}` : name;
+        this._flattenTreeForDiff(child, childPath, output);
+      }
+    }
+    return output;
   }
 
   // --- RAM Engine ---
@@ -961,6 +1220,7 @@ class triflareVolumes {
           await this._persistOPFSMetadata(volName);
         });
       }
+      this._emitEvent('format', volName, '', {});
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
     } catch (e) {
@@ -1029,6 +1289,7 @@ class triflareVolumes {
       const { volName, relPath, vol } = this._parse(args.PATH);
       if (!relPath) throw new Error('INVALID_PATH: Cannot write to root');
       const { mime, dataBuf } = this._parseDataOrString(args.STRING);
+      let created = false;
 
       if (vol.type === 'RAM') {
         const { parent, name } = this._traverseRAM(volName, relPath, {
@@ -1048,6 +1309,7 @@ class triflareVolumes {
           existingSize = existing.content.byteLength;
           existingPerms = existing.perms; // Preserve existing permissions
         } else {
+          created = true;
           const parentRelPath = relPath.split('/').slice(0, -1).join('/');
           if (!this._getPerms(volName, parentRelPath).create)
             throw new Error('PERMISSION_DENIED: Create permission denied on parent directory');
@@ -1085,6 +1347,7 @@ class triflareVolumes {
             } catch (_e) {
               if (_e && _e.name === 'NotFoundError') {
                 isNew = true;
+                created = true;
               } else if (_e && _e.name === 'TypeMismatchError') {
                 throw new Error('TYPE_MISMATCH: Path is a directory', { cause: _e });
               } else {
@@ -1137,6 +1400,8 @@ class triflareVolumes {
         this._opfsPersistPromises[volName] = next;
         await next;
       }
+      const eventType = args && args._eventType === 'append' ? 'append' : 'write';
+      this._emitEvent(eventType, volName, relPath, { created: !!created });
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
     } catch (e) {
@@ -1150,13 +1415,16 @@ class triflareVolumes {
       const { volName, relPath, vol } = this._parse(args.PATH);
       if (!relPath) throw new Error('INVALID_PATH: Cannot append to root');
       const { mime, dataBuf } = this._parseDataOrString(args.STRING);
+      let created = false;
 
       if (vol.type === 'RAM') {
         const { parent, name } = this._traverseRAM(volName, relPath, {
           parentOnly: true,
           createDirs: true,
         });
-        if (!parent.children.has(name)) return this._writePath(args); // Fallbacks to checking Create permission
+        if (!parent.children.has(name)) {
+          return this._writePath({ ...args, _eventType: 'append' }); // Falls back to checking Create permission
+        }
 
         if (!this._getPerms(volName, relPath).write)
           throw new Error('PERMISSION_DENIED: Write permission denied');
@@ -1192,6 +1460,7 @@ class triflareVolumes {
             } catch (_e) {
               if (_e && _e.name === 'NotFoundError') {
                 isNew = true;
+                created = true;
               } else if (_e && _e.name === 'TypeMismatchError') {
                 throw new Error('TYPE_MISMATCH: Path is a directory', { cause: _e });
               } else {
@@ -1240,6 +1509,7 @@ class triflareVolumes {
         this._opfsPersistPromises[volName] = next;
         await next;
       }
+      this._emitEvent('append', volName, relPath, { created: !!created });
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
     } catch (e) {
@@ -1458,6 +1728,7 @@ class triflareVolumes {
           await this._persistOPFSMetadata(volName);
         });
       }
+      this._emitEvent('delete', volName, relPath, {});
       this._pathCache.clear(); // Safety clear on delete
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
@@ -1709,6 +1980,7 @@ class triflareVolumes {
             await this._setPerm(volName, '', k, v);
           }
         }
+        this._emitEvent('import', volName, '', {});
       }
 
       this._pathCache.clear();
@@ -1745,6 +2017,7 @@ class triflareVolumes {
 
       await this._setPerm(volName, relPath, perm, value);
 
+      this._emitEvent('permission', volName, relPath, { perm, value });
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
     } catch (e) {
@@ -1791,6 +2064,270 @@ class triflareVolumes {
 
   getLastError() {
     return this.lastError;
+  }
+
+  async beginTransaction(args) {
+    await this._ready;
+    try {
+      const volName = this._normalizeVolumeName(args.VOL);
+      const txName = String(args.TXN || 'main').trim() || 'main';
+      if (!this.volumes[volName]) throw new Error('NOT_FOUND: Volume not found');
+      if (this._transactions.has(volName))
+        throw new Error(`INVALID_ARGUMENT: Transaction already active on ${volName}`);
+      const exportJson = await this.exportVolume({ VOL: volName });
+      const snapshotBytes = this._utf8ByteLength(exportJson);
+      if (snapshotBytes > this._maxTransactionSnapshotBytes) {
+        const limitMb = this._maxTransactionSnapshotBytes / (1024 * 1024);
+        const limitText =
+          this._maxTransactionSnapshotBytes < 1024 * 1024
+            ? `${this._maxTransactionSnapshotBytes} bytes`
+            : `${Number(limitMb.toFixed(2))} MB`;
+        throw new Error(
+          `INVALID_ARGUMENT: Exported transaction snapshot exceeds ${limitText} limit`
+        );
+      }
+      const parsed = JSON.parse(exportJson);
+      if (!parsed[volName])
+        throw new Error('INTERNAL_ERROR: Failed to capture transaction snapshot');
+      const snapshot = JSON.stringify({ [volName]: parsed[volName] });
+      this._transactions.set(volName, { name: txName, snapshot, startedAt: Date.now() });
+      this._emitEvent('transaction-begin', volName, '', { transaction: txName });
+      this.lastError = JSON.stringify({ status: 'success' });
+      return this.lastError;
+    } catch (e) {
+      return this._handleError(e);
+    }
+  }
+
+  async commitTransaction(args) {
+    await this._ready;
+    try {
+      const volName = this._normalizeVolumeName(args.VOL);
+      if (!this._transactions.has(volName))
+        throw new Error(`NOT_FOUND: No active transaction on ${volName}`);
+      const tx = this._transactions.get(volName);
+      this._transactions.delete(volName);
+      this._emitEvent('transaction-commit', volName, '', { transaction: tx.name });
+      this.lastError = JSON.stringify({ status: 'success' });
+      return this.lastError;
+    } catch (e) {
+      return this._handleError(e);
+    }
+  }
+
+  async rollbackTransaction(args) {
+    await this._ready;
+    try {
+      const volName = this._normalizeVolumeName(args.VOL);
+      if (!this._transactions.has(volName))
+        throw new Error(`NOT_FOUND: No active transaction on ${volName}`);
+      const tx = this._transactions.get(volName);
+      const importResult = await this.importVolume({ VOL: volName, JSON: tx.snapshot });
+      const status = JSON.parse(importResult);
+      if (status.status !== 'success')
+        throw new Error('INTERNAL_ERROR: Failed to rollback transaction');
+      this._transactions.delete(volName);
+      this._emitEvent('transaction-rollback', volName, '', { transaction: tx.name });
+      this.lastError = JSON.stringify({ status: 'success' });
+      return this.lastError;
+    } catch (e) {
+      return this._handleError(e);
+    }
+  }
+
+  async listTransactions() {
+    await this._ready;
+    const items = [];
+    for (const [volName, tx] of this._transactions.entries()) {
+      items.push({ volume: volName, name: tx.name, startedAt: tx.startedAt });
+    }
+    return JSON.stringify(items);
+  }
+
+  async createSnapshot(args) {
+    await this._ready;
+    try {
+      const volName = this._normalizeVolumeName(args.VOL);
+      const snapName = String(args.SNAP || '').trim();
+      if (!snapName) throw new Error('INVALID_ARGUMENT: Snapshot name is required');
+      if (!this.volumes[volName]) throw new Error('NOT_FOUND: Volume not found');
+      const exportJson = await this.exportVolume({ VOL: volName });
+      const parsed = JSON.parse(exportJson);
+      if (!parsed[volName]) throw new Error('INTERNAL_ERROR: Failed to capture snapshot');
+      const volumeSnapshot = JSON.stringify({ [volName]: parsed[volName] });
+      if (!this._snapshots.has(volName)) this._snapshots.set(volName, new Map());
+      const snapshots = this._snapshots.get(volName);
+      if (!snapshots.has(snapName) && snapshots.size >= this._maxSnapshotsPerVolume) {
+        throw new Error(
+          `QUOTA_EXCEEDED: Snapshot limit (${this._maxSnapshotsPerVolume}) reached for ${volName}`
+        );
+      }
+      snapshots.set(snapName, volumeSnapshot);
+      this._emitEvent('snapshot-create', volName, '', { snapshot: snapName });
+      this.lastError = JSON.stringify({ status: 'success' });
+      return this.lastError;
+    } catch (e) {
+      return this._handleError(e);
+    }
+  }
+
+  async restoreSnapshot(args) {
+    await this._ready;
+    try {
+      const volName = this._normalizeVolumeName(args.VOL);
+      const snapName = String(args.SNAP || '').trim();
+      if (!snapName) throw new Error('INVALID_ARGUMENT: Snapshot name is required');
+      const byVol = this._snapshots.get(volName);
+      if (!byVol || !byVol.has(snapName))
+        throw new Error(`NOT_FOUND: Snapshot ${snapName} not found for ${volName}`);
+      const importResult = await this.importVolume({ VOL: volName, JSON: byVol.get(snapName) });
+      const status = JSON.parse(importResult);
+      if (status.status !== 'success')
+        throw new Error(`INTERNAL_ERROR: Failed to restore snapshot ${snapName}`);
+      this._emitEvent('snapshot-restore', volName, '', { snapshot: snapName });
+      this.lastError = JSON.stringify({ status: 'success' });
+      return this.lastError;
+    } catch (e) {
+      return this._handleError(e);
+    }
+  }
+
+  async deleteSnapshot(args) {
+    await this._ready;
+    try {
+      const volName = this._normalizeVolumeName(args.VOL);
+      const snapName = String(args.SNAP || '').trim();
+      if (!snapName) throw new Error('INVALID_ARGUMENT: Snapshot name is required');
+      const byVol = this._snapshots.get(volName);
+      if (!byVol || !byVol.has(snapName))
+        throw new Error(`NOT_FOUND: Snapshot ${snapName} not found for ${volName}`);
+      byVol.delete(snapName);
+      if (byVol.size === 0) this._snapshots.delete(volName);
+      this._emitEvent('snapshot-delete', volName, '', { snapshot: snapName });
+      this.lastError = JSON.stringify({ status: 'success' });
+      return this.lastError;
+    } catch (e) {
+      return this._handleError(e);
+    }
+  }
+
+  async listSnapshots(args) {
+    await this._ready;
+    try {
+      const volName = this._normalizeVolumeName(args.VOL);
+      if (!this.volumes[volName]) throw new Error('NOT_FOUND: Volume not found');
+      const byVol = this._snapshots.get(volName);
+      return JSON.stringify(byVol ? Array.from(byVol.keys()) : []);
+    } catch (e) {
+      this._handleError(e);
+      return '[]';
+    }
+  }
+
+  async diffSnapshots(args) {
+    await this._ready;
+    try {
+      const volName = this._normalizeVolumeName(args.VOL);
+      const a = String(args.A || '').trim();
+      const b = String(args.B || '').trim();
+      if (!a || !b) throw new Error('INVALID_ARGUMENT: Snapshot names are required');
+      const byVol = this._snapshots.get(volName);
+      if (!byVol || !byVol.has(a))
+        throw new Error(`NOT_FOUND: Snapshot ${a} not found for ${volName}`);
+      if (!byVol.has(b)) throw new Error(`NOT_FOUND: Snapshot ${b} not found for ${volName}`);
+
+      const sa = JSON.parse(byVol.get(a))[volName];
+      const sb = JSON.parse(byVol.get(b))[volName];
+      const ma = this._flattenTreeForDiff(sa.tree);
+      const mb = this._flattenTreeForDiff(sb.tree);
+
+      const added = [];
+      const removed = [];
+      const changed = [];
+      for (const key of mb.keys()) {
+        if (!ma.has(key)) added.push(key);
+      }
+      for (const key of ma.keys()) {
+        if (!mb.has(key)) removed.push(key);
+      }
+      for (const key of ma.keys()) {
+        if (mb.has(key) && ma.get(key) !== mb.get(key)) changed.push(key);
+      }
+
+      const diff = {
+        volume: volName,
+        from: a,
+        to: b,
+        added,
+        removed,
+        changed,
+      };
+      this.lastError = JSON.stringify({ status: 'success' });
+      return JSON.stringify(diff);
+    } catch (e) {
+      this._handleError(e);
+      return JSON.stringify({ added: [], removed: [], changed: [] });
+    }
+  }
+
+  async watchPath(args) {
+    await this._ready;
+    try {
+      const depth = this._normalizeDispatchToken(
+        args.DEPTH,
+        { immediate: 'immediate', all: 'all' },
+        'DEPTH'
+      );
+      const parsed = this._parse(args.PATH);
+      const id = String(this._nextWatcherId++);
+      this._watchers.set(id, {
+        id,
+        volName: parsed.volName,
+        relPath: parsed.relPath,
+        recursive: depth === 'all',
+        cursorEventId: this._nextEventId - 1,
+      });
+      this.lastError = JSON.stringify({ status: 'success' });
+      return id;
+    } catch (e) {
+      this._handleError(e);
+      return '';
+    }
+  }
+
+  async unwatchPath(args) {
+    await this._ready;
+    try {
+      const watcherId = String(args.WATCHER || '').trim();
+      if (!this._watchers.has(watcherId))
+        throw new Error(`NOT_FOUND: Watcher ${watcherId} does not exist`);
+      this._watchers.delete(watcherId);
+      this.lastError = JSON.stringify({ status: 'success' });
+      return this.lastError;
+    } catch (e) {
+      return this._handleError(e);
+    }
+  }
+
+  async pollWatcherEvents(args) {
+    await this._ready;
+    try {
+      const watcherId = String(args.WATCHER || '').trim();
+      const watcher = this._watchers.get(watcherId);
+      if (!watcher) throw new Error(`NOT_FOUND: Watcher ${watcherId} does not exist`);
+      const events = [];
+      const cursorEventId = this._getWatcherCursorEventId(watcher);
+      for (const ev of this._eventLog) {
+        if (ev.id <= cursorEventId) continue;
+        if (this._watcherMatchesEvent(watcher, ev)) events.push(ev);
+      }
+      watcher.cursorEventId = this._nextEventId - 1;
+      this.lastError = JSON.stringify({ status: 'success' });
+      return JSON.stringify(events);
+    } catch (e) {
+      this._handleError(e);
+      return '[]';
+    }
   }
 
   // --- Diagnostics Test ---

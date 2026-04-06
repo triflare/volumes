@@ -46,7 +46,9 @@ class MockOPFSFileHandle {
       _buffer: options.keepExistingData ? this._content : new Uint8Array(0),
       write: async data => {
         if (typeof data === 'object' && data.type === 'write') {
-          const newBuf = new Uint8Array(Math.max(writable._buffer.byteLength, data.position + data.data.byteLength));
+          const newBuf = new Uint8Array(
+            Math.max(writable._buffer.byteLength, data.position + data.data.byteLength)
+          );
           newBuf.set(writable._buffer);
           newBuf.set(new Uint8Array(data.data), data.position);
           writable._buffer = newBuf;
@@ -173,6 +175,35 @@ after(() => {
   if (globalThis.navigator && globalThis.navigator.storage) {
     delete globalThis.navigator.storage;
   }
+});
+
+describe('triflareVolumes — runtime requirements', () => {
+  it('alerts and throws when OPFS support is unavailable at construction time', async () => {
+    const originalNavigator = globalThis.navigator;
+    const originalAlert = globalThis.alert;
+    let alertMessage = '';
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {},
+      writable: true,
+      configurable: true,
+    });
+    globalThis.alert = msg => {
+      alertMessage = String(msg || '');
+    };
+
+    try {
+      const RuntimeClass = extension.constructor;
+      assert.throws(() => new RuntimeClass(), /INTERNAL_ERROR: Volumes requires OPFS support\./);
+      assert.ok(alertMessage.includes('Volumes requires OPFS support'));
+    } finally {
+      globalThis.alert = originalAlert;
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        writable: true,
+        configurable: true,
+      });
+    }
+  });
 });
 
 // ===== INITIALIZATION & REGISTRATION =====
@@ -1304,7 +1335,10 @@ describe('triflareVolumes — export/import', () => {
     assert.equal(file2, 'content2', 'file2 should be imported');
 
     // Verify permissions were applied correctly (should be restrictive after import)
-    const canCreate = await extension.checkPermission({ PATH: 'perm_target://dir', PERM: 'create' });
+    const canCreate = await extension.checkPermission({
+      PATH: 'perm_target://dir',
+      PERM: 'create',
+    });
     assert.equal(canCreate, false, 'create permission should be denied on imported directory');
 
     const canWrite = await extension.checkPermission({ PATH: 'perm_target://dir', PERM: 'write' });
@@ -1331,7 +1365,11 @@ describe('triflareVolumes — export/import', () => {
 
     // Verify export represents unlimited quotas with sentinel
     assert.equal(data[vol].sizeLimit, '__INFINITY__', 'exported sizeLimit should be __INFINITY__');
-    assert.equal(data[vol].fileCountLimit, '__INFINITY__', 'exported fileCountLimit should be __INFINITY__');
+    assert.equal(
+      data[vol].fileCountLimit,
+      '__INFINITY__',
+      'exported fileCountLimit should be __INFINITY__'
+    );
 
     // Modify export for new volume (using same type so import can succeed)
     data['unlimited_target://'] = data[vol];
@@ -1352,7 +1390,10 @@ describe('triflareVolumes — export/import', () => {
     assert.equal(targetVol.fileCountLimit, Infinity, 'imported fileCountLimit should be Infinity');
 
     // Verify content
-    const content = await extension.fileRead({ PATH: 'unlimited_target://file.txt', FORMAT: 'text' });
+    const content = await extension.fileRead({
+      PATH: 'unlimited_target://file.txt',
+      FORMAT: 'text',
+    });
     assert.equal(content, 'test data', 'content should be imported');
   });
 
@@ -1746,7 +1787,10 @@ describe('triflareVolumes — edge cases', () => {
     // Should normalize volume name by trimming and adding ://
     const volumes = JSON.parse(await extension.listVolumes());
     const expectedNormalizedName = 'vol with spaces://';
-    assert.ok(volumes.some(v => v === expectedNormalizedName), `Expected to find '${expectedNormalizedName}' in volumes`);
+    assert.ok(
+      volumes.some(v => v === expectedNormalizedName),
+      `Expected to find '${expectedNormalizedName}' in volumes`
+    );
   });
 
   it('respects deeply nested directory creation', async () => {
@@ -1804,5 +1848,237 @@ describe('triflareVolumes — concurrent operations', () => {
 
     const content = await extension.fileRead({ PATH: vol + 'seq.txt', FORMAT: 'text' });
     assert.equal(content, 'start-middle-end');
+  });
+});
+
+// ===== TRANSACTIONS =====
+
+describe('triflareVolumes — transactions', () => {
+  before(async () => {
+    await extension.mountAs({ VOL: 'txn_test://', TYPE: 'RAM' });
+    await extension.formatVolume({ VOL: 'txn_test://' });
+  });
+
+  it('begins and lists an active transaction', async () => {
+    const result = await extension.beginTransaction({ TXN: 'tx1', VOL: 'txn_test://' });
+    const status = JSON.parse(result);
+    assert.equal(status.status, 'success');
+
+    const listed = JSON.parse(await extension.listTransactions());
+    assert.ok(Array.isArray(listed));
+    assert.ok(listed.some(t => t.volume === 'txn_test://' && t.name === 'tx1'));
+
+    const commit = await extension.commitTransaction({ VOL: 'txn_test://' });
+    const commitStatus = JSON.parse(commit);
+    assert.equal(commitStatus.status, 'success');
+  });
+
+  it('rolls back file changes made during an active transaction', async () => {
+    const vol = 'txn_test://';
+    await extension.fileWrite({ MODE: 'write', STRING: 'before', PATH: vol + 'state.txt' });
+    await extension.beginTransaction({ TXN: 'tx-rollback', VOL: vol });
+    await extension.fileWrite({ MODE: 'write', STRING: 'after', PATH: vol + 'state.txt' });
+
+    const rollback = await extension.rollbackTransaction({ VOL: vol });
+    const rollbackStatus = JSON.parse(rollback);
+    assert.equal(rollbackStatus.status, 'success');
+
+    const content = await extension.fileRead({ PATH: vol + 'state.txt', FORMAT: 'text' });
+    assert.equal(content, 'before');
+  });
+
+  it('commits transaction and removes it from active list', async () => {
+    const vol = 'txn_test://';
+    await extension.beginTransaction({ TXN: 'tx2', VOL: vol });
+    await extension.fileWrite({ MODE: 'write', STRING: 'keep', PATH: vol + 'committed.txt' });
+
+    const commit = await extension.commitTransaction({ VOL: vol });
+    const commitStatus = JSON.parse(commit);
+    assert.equal(commitStatus.status, 'success');
+
+    const listed = JSON.parse(await extension.listTransactions());
+    assert.ok(!listed.some(t => t.volume === vol));
+    const content = await extension.fileRead({ PATH: vol + 'committed.txt', FORMAT: 'text' });
+    assert.equal(content, 'keep');
+  });
+
+  it('rejects beginTransaction when exported snapshot exceeds configured size limit', async () => {
+    const vol = 'txn_test://';
+    const originalLimit = extension._maxTransactionSnapshotBytes;
+    extension._maxTransactionSnapshotBytes = 16;
+    try {
+      await extension.fileWrite({
+        MODE: 'write',
+        STRING: 'payload-over-limit',
+        PATH: vol + 'big.txt',
+      });
+      const res = await extension.beginTransaction({ TXN: 'too-big', VOL: vol });
+      const status = JSON.parse(res);
+      assert.equal(status.status, 'error');
+      assert.equal(status.code, 'INVALID_ARGUMENT');
+      assert.ok(status.message.includes('snapshot exceeds'));
+    } finally {
+      extension._maxTransactionSnapshotBytes = originalLimit;
+    }
+  });
+});
+
+// ===== SNAPSHOTS =====
+
+describe('triflareVolumes — snapshots', () => {
+  before(async () => {
+    await extension.mountAs({ VOL: 'snap_test://', TYPE: 'RAM' });
+    await extension.formatVolume({ VOL: 'snap_test://' });
+  });
+
+  it('creates and lists snapshots', async () => {
+    const vol = 'snap_test://';
+    await extension.fileWrite({ MODE: 'write', STRING: 'v1', PATH: vol + 'a.txt' });
+    const res = await extension.createSnapshot({ SNAP: 's1', VOL: vol });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'success');
+
+    const list = JSON.parse(await extension.listSnapshots({ VOL: vol }));
+    assert.ok(list.includes('s1'));
+  });
+
+  it('restores a previous snapshot', async () => {
+    const vol = 'snap_test://';
+    await extension.fileWrite({ MODE: 'write', STRING: 'v2', PATH: vol + 'a.txt' });
+    await extension.createSnapshot({ SNAP: 's2', VOL: vol });
+    await extension.fileWrite({ MODE: 'write', STRING: 'v3', PATH: vol + 'a.txt' });
+
+    const restore = await extension.restoreSnapshot({ SNAP: 's1', VOL: vol });
+    const status = JSON.parse(restore);
+    assert.equal(status.status, 'success');
+
+    const content = await extension.fileRead({ PATH: vol + 'a.txt', FORMAT: 'text' });
+    assert.equal(content, 'v1');
+  });
+
+  it('diffs snapshots and reports changed paths', async () => {
+    const vol = 'snap_test://';
+    const diffStr = await extension.diffSnapshots({ A: 's1', B: 's2', VOL: vol });
+    const diff = JSON.parse(diffStr);
+    assert.equal(diff.volume, vol);
+    assert.ok(Array.isArray(diff.changed));
+    assert.ok(diff.changed.includes('a.txt'));
+  });
+
+  it('deletes a named snapshot', async () => {
+    const vol = 'snap_test://';
+    await extension.createSnapshot({ SNAP: 'to-delete', VOL: vol });
+    const before = JSON.parse(await extension.listSnapshots({ VOL: vol }));
+    assert.ok(before.includes('to-delete'));
+
+    const res = await extension.deleteSnapshot({ SNAP: 'to-delete', VOL: vol });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'success');
+
+    const after = JSON.parse(await extension.listSnapshots({ VOL: vol }));
+    assert.ok(!after.includes('to-delete'));
+  });
+
+  it('enforces per-volume snapshot limit for new snapshot names', async () => {
+    const vol = 'snap_limit_test://';
+    await extension.mountAs({ VOL: vol, TYPE: 'RAM' });
+    await extension.formatVolume({ VOL: vol });
+
+    const originalLimit = extension._maxSnapshotsPerVolume;
+    extension._maxSnapshotsPerVolume = 2;
+    try {
+      await extension.createSnapshot({ SNAP: 'limit-1', VOL: vol });
+      await extension.createSnapshot({ SNAP: 'limit-2', VOL: vol });
+      const over = await extension.createSnapshot({ SNAP: 'limit-3', VOL: vol });
+      const overStatus = JSON.parse(over);
+      assert.equal(overStatus.status, 'error');
+      assert.equal(overStatus.code, 'QUOTA_EXCEEDED');
+
+      const overwrite = await extension.createSnapshot({ SNAP: 'limit-2', VOL: vol });
+      const overwriteStatus = JSON.parse(overwrite);
+      assert.equal(overwriteStatus.status, 'success');
+    } finally {
+      extension._maxSnapshotsPerVolume = originalLimit;
+    }
+  });
+});
+
+// ===== WATCHERS =====
+
+describe('triflareVolumes — watcher events', () => {
+  before(async () => {
+    await extension.mountAs({ VOL: 'watch_test://', TYPE: 'RAM' });
+    await extension.formatVolume({ VOL: 'watch_test://' });
+  });
+
+  it('captures write/delete/permission events for watched path', async () => {
+    const vol = 'watch_test://';
+    const watcher = await extension.watchPath({ PATH: vol, DEPTH: 'all' });
+    assert.ok(watcher);
+
+    await extension.fileWrite({ MODE: 'write', STRING: 'x', PATH: vol + 'f.txt' });
+    await extension.setPermission({ PATH: vol + 'f.txt', PERM: 'read', VALUE: 'deny' });
+    await extension.deletePath({ PATH: vol + 'f.txt' });
+
+    const events = JSON.parse(await extension.pollWatcherEvents({ WATCHER: watcher }));
+    const types = events.map(e => e.type);
+    assert.ok(types.includes('write'));
+    assert.ok(types.includes('permission'));
+    assert.ok(types.includes('delete'));
+  });
+
+  it('returns no events after polling cursor is advanced', async () => {
+    const vol = 'watch_test://';
+    const watcher = await extension.watchPath({ PATH: vol, DEPTH: 'all' });
+    await extension.fileWrite({ MODE: 'write', STRING: 'first', PATH: vol + 'cursor.txt' });
+    const first = JSON.parse(await extension.pollWatcherEvents({ WATCHER: watcher }));
+    assert.ok(first.length >= 1);
+    const second = JSON.parse(await extension.pollWatcherEvents({ WATCHER: watcher }));
+    assert.equal(second.length, 0);
+    await extension.unwatchPath({ WATCHER: watcher });
+  });
+
+  it('retains watcher polling correctness when old events are pruned', async () => {
+    const vol = 'watch_test://';
+    await extension.formatVolume({ VOL: vol });
+    const originalLimit = extension._maxEventLogEntries;
+    extension._maxEventLogEntries = 3;
+    try {
+      const oldWatcher = await extension.watchPath({ PATH: vol, DEPTH: 'all' });
+      const newWatcher = await extension.watchPath({ PATH: vol, DEPTH: 'all' });
+      await extension.unwatchPath({ WATCHER: oldWatcher });
+
+      await extension.fileWrite({ MODE: 'write', STRING: '1', PATH: vol + 'p1.txt' });
+      await extension.fileWrite({ MODE: 'write', STRING: '2', PATH: vol + 'p2.txt' });
+      await extension.fileWrite({ MODE: 'write', STRING: '3', PATH: vol + 'p3.txt' });
+      await extension.fileWrite({ MODE: 'write', STRING: '4', PATH: vol + 'p4.txt' });
+
+      const events = JSON.parse(await extension.pollWatcherEvents({ WATCHER: newWatcher }));
+      assert.equal(events.length, 3);
+      assert.deepEqual(
+        events.map(e => e.path),
+        [vol + 'p2.txt', vol + 'p3.txt', vol + 'p4.txt']
+      );
+      await extension.unwatchPath({ WATCHER: newWatcher });
+    } finally {
+      extension._maxEventLogEntries = originalLimit;
+    }
+  });
+
+  it('emits append event when append creates a missing file', async () => {
+    const vol = 'watch_test://';
+    await extension.formatVolume({ VOL: vol });
+    const watcher = await extension.watchPath({ PATH: vol, DEPTH: 'all' });
+    await extension.fileWrite({
+      MODE: 'append',
+      STRING: 'new',
+      PATH: vol + 'created-by-append.txt',
+    });
+    const events = JSON.parse(await extension.pollWatcherEvents({ WATCHER: watcher }));
+    const appendCreated = events.find(
+      e => e.type === 'append' && e.path === vol + 'created-by-append.txt'
+    );
+    assert.ok(appendCreated, 'expected append event for file created via append');
+    await extension.unwatchPath({ WATCHER: watcher });
   });
 });

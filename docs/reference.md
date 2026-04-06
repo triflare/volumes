@@ -91,6 +91,62 @@ Exports one volume or all mounted volumes to JSON.
 
 Imports a previously exported JSON structure into a volume.
 
+## Transaction blocks
+
+### begin transaction [TXN] on [VOL]
+
+Starts a transaction snapshot for a volume.
+
+### commit transaction on [VOL]
+
+Commits an active transaction on a volume.
+
+### rollback transaction on [VOL]
+
+Restores the volume state captured when the active transaction started.
+
+### list active transactions
+
+Returns a JSON list of active transactions.
+
+## Snapshot blocks
+
+### create snapshot [SNAP] of [VOL]
+
+Creates a named snapshot for a volume.
+
+### restore snapshot [SNAP] on [VOL]
+
+Restores a previously created named snapshot.
+
+### delete snapshot [SNAP] on [VOL]
+
+Deletes a previously created named snapshot.
+
+### diff snapshots [A] and [B] on [VOL]
+
+Returns a JSON diff with added, removed, and changed paths.
+
+### list snapshots on [VOL]
+
+Returns a JSON list of snapshot names for the volume.
+
+## Watcher blocks
+
+### watch [PATH] depth [DEPTH]
+
+Creates a watcher and returns a watcher ID.
+
+- `DEPTH` can be `immediate` or `all`.
+
+### unwatch [WATCHER]
+
+Stops a watcher by its watcher ID.
+
+### poll events for [WATCHER]
+
+Returns new watcher events as JSON since the last poll.
+
 ## Diagnostics blocks
 
 ### last error
