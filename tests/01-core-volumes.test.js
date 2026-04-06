@@ -1900,6 +1900,43 @@ describe('triflareVolumes — snapshots', () => {
     assert.ok(Array.isArray(diff.changed));
     assert.ok(diff.changed.includes('a.txt'));
   });
+
+  it('deletes a named snapshot', async () => {
+    const vol = 'snap_test://';
+    await extension.createSnapshot({ SNAP: 'to-delete', VOL: vol });
+    const before = JSON.parse(await extension.listSnapshots({ VOL: vol }));
+    assert.ok(before.includes('to-delete'));
+
+    const res = await extension.deleteSnapshot({ SNAP: 'to-delete', VOL: vol });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'success');
+
+    const after = JSON.parse(await extension.listSnapshots({ VOL: vol }));
+    assert.ok(!after.includes('to-delete'));
+  });
+
+  it('enforces per-volume snapshot limit for new snapshot names', async () => {
+    const vol = 'snap_limit_test://';
+    await extension.mountAs({ VOL: vol, TYPE: 'RAM' });
+    await extension.formatVolume({ VOL: vol });
+
+    const originalLimit = extension._maxSnapshotsPerVolume;
+    extension._maxSnapshotsPerVolume = 2;
+    try {
+      await extension.createSnapshot({ SNAP: 'limit-1', VOL: vol });
+      await extension.createSnapshot({ SNAP: 'limit-2', VOL: vol });
+      const over = await extension.createSnapshot({ SNAP: 'limit-3', VOL: vol });
+      const overStatus = JSON.parse(over);
+      assert.equal(overStatus.status, 'error');
+      assert.equal(overStatus.code, 'QUOTA_EXCEEDED');
+
+      const overwrite = await extension.createSnapshot({ SNAP: 'limit-2', VOL: vol });
+      const overwriteStatus = JSON.parse(overwrite);
+      assert.equal(overwriteStatus.status, 'success');
+    } finally {
+      extension._maxSnapshotsPerVolume = originalLimit;
+    }
+  });
 });
 
 // ===== WATCHERS =====
@@ -1935,5 +1972,29 @@ describe('triflareVolumes — watcher events', () => {
     const second = JSON.parse(await extension.pollWatcherEvents({ WATCHER: watcher }));
     assert.equal(second.length, 0);
     await extension.unwatchPath({ WATCHER: watcher });
+  });
+
+  it('retains watcher polling correctness when old events are pruned', async () => {
+    const vol = 'watch_test://';
+    await extension.formatVolume({ VOL: vol });
+    const originalLimit = extension._maxEventLogEntries;
+    extension._maxEventLogEntries = 3;
+    try {
+      const oldWatcher = await extension.watchPath({ PATH: vol, DEPTH: 'all' });
+      const newWatcher = await extension.watchPath({ PATH: vol, DEPTH: 'all' });
+      await extension.unwatchPath({ WATCHER: oldWatcher });
+
+      await extension.fileWrite({ MODE: 'write', STRING: '1', PATH: vol + 'p1.txt' });
+      await extension.fileWrite({ MODE: 'write', STRING: '2', PATH: vol + 'p2.txt' });
+      await extension.fileWrite({ MODE: 'write', STRING: '3', PATH: vol + 'p3.txt' });
+      await extension.fileWrite({ MODE: 'write', STRING: '4', PATH: vol + 'p4.txt' });
+
+      const events = JSON.parse(await extension.pollWatcherEvents({ WATCHER: newWatcher }));
+      assert.ok(events.length >= 3);
+      assert.ok(events.some(e => e.path === vol + 'p4.txt'));
+      await extension.unwatchPath({ WATCHER: newWatcher });
+    } finally {
+      extension._maxEventLogEntries = originalLimit;
+    }
   });
 });

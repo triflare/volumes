@@ -62,9 +62,10 @@ Snapshots are named restore points for a volume:
 
 - Create a snapshot before migrations or large imports.
 - Restore any saved snapshot later.
+- Delete snapshots you no longer need.
 - Diff two snapshots to see added, removed, and changed paths.
 
-Snapshots are stored in-memory for the current extension session.
+Snapshots are stored in-memory for the current extension session. To avoid unbounded memory use, snapshots are capped per volume (default `25`, configurable in code via `_maxSnapshotsPerVolume`). When the cap is reached, creating a new snapshot with a new name returns a quota error until you delete older snapshots.
 
 ## Watchers and events
 
@@ -75,6 +76,7 @@ Watchers provide a polling-based event stream for filesystem activity:
 - Unwatch when no longer needed.
 
 Events are emitted for writes, appends, deletes, permission changes, format/import operations, and transaction lifecycle changes.
+Event history is also bounded in-memory (default `1000`, configurable in code via `_maxEventLogEntries`) and older events are pruned as watchers advance, so stale subscribers should poll regularly.
 
 ## File details
 

@@ -119,6 +119,10 @@ Creates a named snapshot for a volume.
 
 Restores a previously created named snapshot.
 
+### delete snapshot [SNAP] on [VOL]
+
+Deletes a previously created named snapshot.
+
 ### diff snapshots [A] and [B] on [VOL]
 
 Returns a JSON diff with added, removed, and changed paths.

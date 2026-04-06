@@ -17,8 +17,10 @@ class triflareVolumes {
     this._transactions = new Map(); // volName -> { name, snapshot, startedAt }
     // Named point-in-time snapshots per volume
     this._snapshots = new Map(); // volName -> Map(snapshotName, exportJSON)
+    this._maxSnapshotsPerVolume = 25;
     // In-memory event log for watch subscriptions
     this._eventLog = [];
+    this._maxEventLogEntries = 1000;
     this._nextEventId = 1;
     this._watchers = new Map(); // watcherId -> { id, volName, relPath, recursive, cursor }
     this._nextWatcherId = 1;
@@ -242,6 +244,15 @@ class triflareVolumes {
           opcode: 'restoreSnapshot',
           blockType: Scratch.BlockType.COMMAND,
           text: Scratch.translate('restore snapshot [SNAP] on [VOL]'),
+          arguments: {
+            SNAP: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap1' },
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
+          },
+        },
+        {
+          opcode: 'deleteSnapshot',
+          blockType: Scratch.BlockType.COMMAND,
+          text: Scratch.translate('delete snapshot [SNAP] on [VOL]'),
           arguments: {
             SNAP: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap1' },
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
@@ -660,6 +671,41 @@ class triflareVolumes {
       detail: detail || {},
     };
     this._eventLog.push(event);
+    this._pruneEventLog();
+  }
+
+  _pruneEventLog() {
+    if (!this._eventLog.length) return;
+
+    let minCursorEventId = Infinity;
+    for (const watcher of this._watchers.values()) {
+      const cursorEventId = Number.isFinite(watcher.cursorEventId)
+        ? watcher.cursorEventId
+        : Number.isFinite(watcher.cursor)
+          ? watcher.cursor
+          : 0;
+      if (cursorEventId < minCursorEventId) minCursorEventId = cursorEventId;
+    }
+
+    if (Number.isFinite(minCursorEventId) && minCursorEventId > 0) {
+      while (this._eventLog.length && this._eventLog[0].id <= minCursorEventId) {
+        this._eventLog.shift();
+      }
+    }
+
+    const overflow = this._eventLog.length - this._maxEventLogEntries;
+    if (overflow <= 0) return;
+
+    const droppedUntilEventId = this._eventLog[overflow - 1].id;
+    this._eventLog.splice(0, overflow);
+    for (const watcher of this._watchers.values()) {
+      const cursorEventId = Number.isFinite(watcher.cursorEventId)
+        ? watcher.cursorEventId
+        : Number.isFinite(watcher.cursor)
+          ? watcher.cursor
+          : 0;
+      if (cursorEventId < droppedUntilEventId) watcher.cursorEventId = droppedUntilEventId;
+    }
   }
 
   _watcherMatchesEvent(watcher, event) {
@@ -1365,9 +1411,9 @@ class triflareVolumes {
               fh = await parent.getFileHandle(name);
               fileSize = (await fh.getFile()).size;
             } catch (_e) {
-                if (_e && _e.name === 'NotFoundError') {
-                  isNew = true;
-                  created = true;
+              if (_e && _e.name === 'NotFoundError') {
+                isNew = true;
+                created = true;
               } else if (_e && _e.name === 'TypeMismatchError') {
                 throw new Error('TYPE_MISMATCH: Path is a directory', { cause: _e });
               } else {
@@ -1983,7 +2029,8 @@ class triflareVolumes {
         throw new Error(`INVALID_ARGUMENT: Transaction already active on ${volName}`);
       const exportJson = await this.exportVolume({ VOL: volName });
       const parsed = JSON.parse(exportJson);
-      if (!parsed[volName]) throw new Error('INTERNAL_ERROR: Failed to capture transaction snapshot');
+      if (!parsed[volName])
+        throw new Error('INTERNAL_ERROR: Failed to capture transaction snapshot');
       const snapshot = JSON.stringify({ [volName]: parsed[volName] });
       this._transactions.set(volName, { name: txName, snapshot, startedAt: Date.now() });
       this._emitEvent('transaction-begin', volName, '', { transaction: txName });
@@ -2051,7 +2098,13 @@ class triflareVolumes {
       if (!parsed[volName]) throw new Error('INTERNAL_ERROR: Failed to capture snapshot');
       const volumeSnapshot = JSON.stringify({ [volName]: parsed[volName] });
       if (!this._snapshots.has(volName)) this._snapshots.set(volName, new Map());
-      this._snapshots.get(volName).set(snapName, volumeSnapshot);
+      const snapshots = this._snapshots.get(volName);
+      if (!snapshots.has(snapName) && snapshots.size >= this._maxSnapshotsPerVolume) {
+        throw new Error(
+          `QUOTA_EXCEEDED: Snapshot limit (${this._maxSnapshotsPerVolume}) reached for ${volName}`
+        );
+      }
+      snapshots.set(snapName, volumeSnapshot);
       this._emitEvent('snapshot-create', volName, '', { snapshot: snapName });
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
@@ -2074,6 +2127,25 @@ class triflareVolumes {
       if (status.status !== 'success')
         throw new Error(`INTERNAL_ERROR: Failed to restore snapshot ${snapName}`);
       this._emitEvent('snapshot-restore', volName, '', { snapshot: snapName });
+      this.lastError = JSON.stringify({ status: 'success' });
+      return this.lastError;
+    } catch (e) {
+      return this._handleError(e);
+    }
+  }
+
+  async deleteSnapshot(args) {
+    await this._ready;
+    try {
+      const volName = this._normalizeVolumeName(args.VOL);
+      const snapName = String(args.SNAP || '').trim();
+      if (!snapName) throw new Error('INVALID_ARGUMENT: Snapshot name is required');
+      const byVol = this._snapshots.get(volName);
+      if (!byVol || !byVol.has(snapName))
+        throw new Error(`NOT_FOUND: Snapshot ${snapName} not found for ${volName}`);
+      byVol.delete(snapName);
+      if (byVol.size === 0) this._snapshots.delete(volName);
+      this._emitEvent('snapshot-delete', volName, '', { snapshot: snapName });
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
     } catch (e) {
@@ -2155,7 +2227,7 @@ class triflareVolumes {
         volName: parsed.volName,
         relPath: parsed.relPath,
         recursive: depth === 'all',
-        cursor: this._eventLog.length,
+        cursorEventId: this._nextEventId - 1,
       });
       this.lastError = JSON.stringify({ status: 'success' });
       return id;
@@ -2186,11 +2258,16 @@ class triflareVolumes {
       const watcher = this._watchers.get(watcherId);
       if (!watcher) throw new Error(`NOT_FOUND: Watcher ${watcherId} does not exist`);
       const events = [];
-      for (let i = watcher.cursor; i < this._eventLog.length; i++) {
-        const ev = this._eventLog[i];
+      const cursorEventId = Number.isFinite(watcher.cursorEventId)
+        ? watcher.cursorEventId
+        : Number.isFinite(watcher.cursor)
+          ? watcher.cursor
+          : 0;
+      for (const ev of this._eventLog) {
+        if (ev.id <= cursorEventId) continue;
         if (this._watcherMatchesEvent(watcher, ev)) events.push(ev);
       }
-      watcher.cursor = this._eventLog.length;
+      watcher.cursorEventId = this._nextEventId - 1;
       this.lastError = JSON.stringify({ status: 'success' });
       return JSON.stringify(events);
     } catch (e) {
