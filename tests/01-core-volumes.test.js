@@ -177,6 +177,35 @@ after(() => {
   }
 });
 
+describe('triflareVolumes — runtime requirements', () => {
+  it('alerts and throws when OPFS support is unavailable at construction time', async () => {
+    const originalNavigator = globalThis.navigator;
+    const originalAlert = globalThis.alert;
+    let alertMessage = '';
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {},
+      writable: true,
+      configurable: true,
+    });
+    globalThis.alert = msg => {
+      alertMessage = String(msg || '');
+    };
+
+    try {
+      const RuntimeClass = extension.constructor;
+      assert.throws(() => new RuntimeClass(), /INTERNAL_ERROR: Volumes requires OPFS support\./);
+      assert.ok(alertMessage.includes('Volumes requires OPFS support'));
+    } finally {
+      globalThis.alert = originalAlert;
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        writable: true,
+        configurable: true,
+      });
+    }
+  });
+});
+
 // ===== INITIALIZATION & REGISTRATION =====
 
 describe('triflareVolumes — initialization', () => {

@@ -7,6 +7,7 @@ This page covers the parts of Volumes that are most useful once you are comforta
 RAM volumes are best for temporary data, scratch space, and tests. They are fast, but the contents disappear when the page reloads.
 
 OPFS volumes are best when you want data to stay available after reloads. They rely on browser support for the Origin Private File System.
+Volumes now fails fast during initialization when OPFS is unavailable, the context is insecure, or it is running inside a sandboxed frame. In browser contexts where `alert()` is available, it also displays an alert message before failing.
 
 ## Permissions
 
@@ -67,7 +68,7 @@ Snapshots are named restore points for a volume:
 - Diff two snapshots to see added, removed, and changed paths.
 
 Snapshots are stored in-memory for the current extension session. To avoid unbounded memory use, snapshots are capped per volume (default `25`, configurable in code via `_maxSnapshotsPerVolume`). When the cap is reached, creating a new snapshot with a new name returns a quota error until you delete older snapshots.
-Transactions use the same in-memory export format and also enforce a transaction snapshot-size limit (default `50 MB`, configurable in code via `_maxTransactionSnapshotBytes`).
+Transactions use the same in-memory export format and also enforce a transaction snapshot size limit (default `50 MB`, configurable in code via `_maxTransactionSnapshotBytes`).
 
 ## Watchers and events
 

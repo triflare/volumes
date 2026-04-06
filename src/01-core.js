@@ -2,6 +2,7 @@ class triflareVolumes {
   /* global __ASSET__ */
 
   constructor() {
+    this._assertRuntimeSupport();
     this.volumes = {};
     this.lastError = JSON.stringify({ status: 'success' });
     // Toggle verbose logging for Volumes (no-op when false)
@@ -25,6 +26,7 @@ class triflareVolumes {
     this._nextEventId = 1;
     this._watchers = new Map(); // watcherId -> { id, volName, relPath, recursive, cursor }
     this._nextWatcherId = 1;
+    this._textEncoder = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
 
     this._ready = this._initVolumes().catch(e => {
       this.lastError = JSON.stringify({
@@ -387,6 +389,34 @@ class triflareVolumes {
   }
 
   // --- Utility Functions ---
+  _assertRuntimeSupport() {
+    let unsupportedReason = '';
+    if (!this._supportsOPFS()) {
+      unsupportedReason =
+        'Volumes requires OPFS support. This usually means running in an insecure or unsupported context.';
+    } else if (typeof globalThis.isSecureContext === 'boolean' && !globalThis.isSecureContext) {
+      unsupportedReason = 'Volumes requires a secure context (HTTPS).';
+    } else if (
+      typeof window !== 'undefined' &&
+      window.frameElement &&
+      typeof window.frameElement.hasAttribute === 'function' &&
+      window.frameElement.hasAttribute('sandbox')
+    ) {
+      unsupportedReason = 'Volumes cannot run in a sandboxed frame.';
+    }
+
+    if (!unsupportedReason) return;
+
+    if (typeof globalThis.alert === 'function') {
+      try {
+        globalThis.alert(unsupportedReason);
+      } catch (_) {
+        // Ignore alert failures in restricted runtimes.
+      }
+    }
+    throw new Error(`INTERNAL_ERROR: ${unsupportedReason}`);
+  }
+
   _supportsOPFS() {
     return (
       typeof navigator !== 'undefined' &&
@@ -663,8 +693,8 @@ class triflareVolumes {
 
   _utf8ByteLength(value) {
     const input = String(value || '');
-    if (typeof TextEncoder !== 'undefined') {
-      return new TextEncoder().encode(input).length;
+    if (this._textEncoder) {
+      return this._textEncoder.encode(input).length;
     }
     return unescape(encodeURIComponent(input)).length;
   }
