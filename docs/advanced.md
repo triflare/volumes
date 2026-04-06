@@ -46,6 +46,36 @@ A few important details:
 - You can export all mounted volumes at once.
 - If you want to import into a different volume name, update the JSON key to match the destination volume.
 
+## Transactions
+
+Transactions let you stage multiple changes and then either keep or discard them:
+
+- Begin a transaction before a sequence of risky writes or deletes.
+- Commit when all operations succeed.
+- Roll back to restore the exact pre-transaction state.
+
+Transactions are tracked per volume and only one transaction can be active per volume at a time.
+
+## Snapshots
+
+Snapshots are named restore points for a volume:
+
+- Create a snapshot before migrations or large imports.
+- Restore any saved snapshot later.
+- Diff two snapshots to see added, removed, and changed paths.
+
+Snapshots are stored in-memory for the current extension session.
+
+## Watchers and events
+
+Watchers provide a polling-based event stream for filesystem activity:
+
+- Watch a path with immediate or recursive depth.
+- Poll by watcher ID to get new events since the previous poll.
+- Unwatch when no longer needed.
+
+Events are emitted for writes, appends, deletes, permission changes, format/import operations, and transaction lifecycle changes.
+
 ## File details
 
 When you write a Data URI, the extension keeps the MIME type if one is provided.

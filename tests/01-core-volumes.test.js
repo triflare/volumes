@@ -1806,3 +1806,129 @@ describe('triflareVolumes — concurrent operations', () => {
     assert.equal(content, 'start-middle-end');
   });
 });
+
+// ===== TRANSACTIONS =====
+
+describe('triflareVolumes — transactions', () => {
+  before(async () => {
+    await extension.mountAs({ VOL: 'txn_test://', TYPE: 'RAM' });
+    await extension.formatVolume({ VOL: 'txn_test://' });
+  });
+
+  it('begins and lists an active transaction', async () => {
+    const result = await extension.beginTransaction({ TXN: 'tx1', VOL: 'txn_test://' });
+    const status = JSON.parse(result);
+    assert.equal(status.status, 'success');
+
+    const listed = JSON.parse(await extension.listTransactions());
+    assert.ok(Array.isArray(listed));
+    assert.ok(listed.some(t => t.volume === 'txn_test://' && t.name === 'tx1'));
+  });
+
+  it('rolls back file changes made during an active transaction', async () => {
+    const vol = 'txn_test://';
+    await extension.fileWrite({ MODE: 'write', STRING: 'before', PATH: vol + 'state.txt' });
+    await extension.fileWrite({ MODE: 'write', STRING: 'after', PATH: vol + 'state.txt' });
+
+    const rollback = await extension.rollbackTransaction({ VOL: vol });
+    const rollbackStatus = JSON.parse(rollback);
+    assert.equal(rollbackStatus.status, 'success');
+
+    const content = await extension.fileRead({ PATH: vol + 'state.txt', FORMAT: 'text' });
+    assert.equal(content, '');
+  });
+
+  it('commits transaction and removes it from active list', async () => {
+    const vol = 'txn_test://';
+    await extension.beginTransaction({ TXN: 'tx2', VOL: vol });
+    await extension.fileWrite({ MODE: 'write', STRING: 'keep', PATH: vol + 'committed.txt' });
+
+    const commit = await extension.commitTransaction({ VOL: vol });
+    const commitStatus = JSON.parse(commit);
+    assert.equal(commitStatus.status, 'success');
+
+    const listed = JSON.parse(await extension.listTransactions());
+    assert.ok(!listed.some(t => t.volume === vol));
+    const content = await extension.fileRead({ PATH: vol + 'committed.txt', FORMAT: 'text' });
+    assert.equal(content, 'keep');
+  });
+});
+
+// ===== SNAPSHOTS =====
+
+describe('triflareVolumes — snapshots', () => {
+  before(async () => {
+    await extension.mountAs({ VOL: 'snap_test://', TYPE: 'RAM' });
+    await extension.formatVolume({ VOL: 'snap_test://' });
+  });
+
+  it('creates and lists snapshots', async () => {
+    const vol = 'snap_test://';
+    await extension.fileWrite({ MODE: 'write', STRING: 'v1', PATH: vol + 'a.txt' });
+    const res = await extension.createSnapshot({ SNAP: 's1', VOL: vol });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'success');
+
+    const list = JSON.parse(await extension.listSnapshots({ VOL: vol }));
+    assert.ok(list.includes('s1'));
+  });
+
+  it('restores a previous snapshot', async () => {
+    const vol = 'snap_test://';
+    await extension.fileWrite({ MODE: 'write', STRING: 'v2', PATH: vol + 'a.txt' });
+    await extension.createSnapshot({ SNAP: 's2', VOL: vol });
+    await extension.fileWrite({ MODE: 'write', STRING: 'v3', PATH: vol + 'a.txt' });
+
+    const restore = await extension.restoreSnapshot({ SNAP: 's1', VOL: vol });
+    const status = JSON.parse(restore);
+    assert.equal(status.status, 'success');
+
+    const content = await extension.fileRead({ PATH: vol + 'a.txt', FORMAT: 'text' });
+    assert.equal(content, 'v1');
+  });
+
+  it('diffs snapshots and reports changed paths', async () => {
+    const vol = 'snap_test://';
+    const diffStr = await extension.diffSnapshots({ A: 's1', B: 's2', VOL: vol });
+    const diff = JSON.parse(diffStr);
+    assert.equal(diff.volume, vol);
+    assert.ok(Array.isArray(diff.changed));
+    assert.ok(diff.changed.includes('a.txt'));
+  });
+});
+
+// ===== WATCHERS =====
+
+describe('triflareVolumes — watcher events', () => {
+  before(async () => {
+    await extension.mountAs({ VOL: 'watch_test://', TYPE: 'RAM' });
+    await extension.formatVolume({ VOL: 'watch_test://' });
+  });
+
+  it('captures write/delete/permission events for watched path', async () => {
+    const vol = 'watch_test://';
+    const watcher = await extension.watchPath({ PATH: vol, DEPTH: 'all' });
+    assert.ok(watcher);
+
+    await extension.fileWrite({ MODE: 'write', STRING: 'x', PATH: vol + 'f.txt' });
+    await extension.setPermission({ PATH: vol + 'f.txt', PERM: 'read', VALUE: 'deny' });
+    await extension.deletePath({ PATH: vol + 'f.txt' });
+
+    const events = JSON.parse(await extension.pollWatcherEvents({ WATCHER: watcher }));
+    const types = events.map(e => e.type);
+    assert.ok(types.includes('write'));
+    assert.ok(types.includes('permission'));
+    assert.ok(types.includes('delete'));
+  });
+
+  it('returns no events after polling cursor is advanced', async () => {
+    const vol = 'watch_test://';
+    const watcher = await extension.watchPath({ PATH: vol, DEPTH: 'all' });
+    await extension.fileWrite({ MODE: 'write', STRING: 'first', PATH: vol + 'cursor.txt' });
+    const first = JSON.parse(await extension.pollWatcherEvents({ WATCHER: watcher }));
+    assert.ok(first.length >= 1);
+    const second = JSON.parse(await extension.pollWatcherEvents({ WATCHER: watcher }));
+    assert.equal(second.length, 0);
+    await extension.unwatchPath({ WATCHER: watcher });
+  });
+});
