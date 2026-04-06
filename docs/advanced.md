@@ -55,6 +55,7 @@ Transactions let you stage multiple changes and then either keep or discard them
 - Roll back to restore the exact pre-transaction state.
 
 Transactions are tracked per volume and only one transaction can be active per volume at a time.
+The pre-transaction state is exported and kept in memory (same mechanism as snapshots), so active transactions on large volumes can consume comparable memory. Keep transactions small or commit frequently, and see the Snapshots section below for related memory details and limits.
 
 ## Snapshots
 
@@ -66,6 +67,7 @@ Snapshots are named restore points for a volume:
 - Diff two snapshots to see added, removed, and changed paths.
 
 Snapshots are stored in-memory for the current extension session. To avoid unbounded memory use, snapshots are capped per volume (default `25`, configurable in code via `_maxSnapshotsPerVolume`). When the cap is reached, creating a new snapshot with a new name returns a quota error until you delete older snapshots.
+Transactions use the same in-memory export format and also enforce a transaction snapshot-size limit (default `50 MB`, configurable in code via `_maxTransactionSnapshotBytes`).
 
 ## Watchers and events
 

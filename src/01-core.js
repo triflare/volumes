@@ -15,6 +15,7 @@ class triflareVolumes {
     this._pathCache = new Map();
     // Active transaction snapshots (one active transaction per volume)
     this._transactions = new Map(); // volName -> { name, snapshot, startedAt }
+    this._maxTransactionSnapshotBytes = 50 * 1024 * 1024;
     // Named point-in-time snapshots per volume
     this._snapshots = new Map(); // volName -> Map(snapshotName, exportJSON)
     this._maxSnapshotsPerVolume = 25;
@@ -658,6 +659,14 @@ class triflareVolumes {
     let volName = String(volInput || '').trim();
     if (!volName.endsWith('://')) volName += '://';
     return volName;
+  }
+
+  _utf8ByteLength(value) {
+    const input = String(value || '');
+    if (typeof TextEncoder !== 'undefined') {
+      return new TextEncoder().encode(input).length;
+    }
+    return unescape(encodeURIComponent(input)).length;
   }
 
   _emitEvent(type, volName, relPath = '', detail = {}) {
@@ -1353,7 +1362,8 @@ class triflareVolumes {
         this._opfsPersistPromises[volName] = next;
         await next;
       }
-      this._emitEvent('write', volName, relPath, { created: !!created });
+      const eventType = args && args._eventType === 'append' ? 'append' : 'write';
+      this._emitEvent(eventType, volName, relPath, { created: !!created });
       this.lastError = JSON.stringify({ status: 'success' });
       return this.lastError;
     } catch (e) {
@@ -1375,7 +1385,7 @@ class triflareVolumes {
           createDirs: true,
         });
         if (!parent.children.has(name)) {
-          return this._writePath(args); // Falls back to checking Create permission
+          return this._writePath({ ...args, _eventType: 'append' }); // Falls back to checking Create permission
         }
 
         if (!this._getPerms(volName, relPath).write)
@@ -2027,6 +2037,13 @@ class triflareVolumes {
       if (this._transactions.has(volName))
         throw new Error(`INVALID_ARGUMENT: Transaction already active on ${volName}`);
       const exportJson = await this.exportVolume({ VOL: volName });
+      const snapshotBytes = this._utf8ByteLength(exportJson);
+      if (snapshotBytes > this._maxTransactionSnapshotBytes) {
+        const limitMb = Math.round(this._maxTransactionSnapshotBytes / (1024 * 1024));
+        throw new Error(
+          `INVALID_ARGUMENT: Exported transaction snapshot exceeds ${limitMb} MB limit`
+        );
+      }
       const parsed = JSON.parse(exportJson);
       if (!parsed[volName])
         throw new Error('INTERNAL_ERROR: Failed to capture transaction snapshot');

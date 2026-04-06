@@ -46,7 +46,9 @@ class MockOPFSFileHandle {
       _buffer: options.keepExistingData ? this._content : new Uint8Array(0),
       write: async data => {
         if (typeof data === 'object' && data.type === 'write') {
-          const newBuf = new Uint8Array(Math.max(writable._buffer.byteLength, data.position + data.data.byteLength));
+          const newBuf = new Uint8Array(
+            Math.max(writable._buffer.byteLength, data.position + data.data.byteLength)
+          );
           newBuf.set(writable._buffer);
           newBuf.set(new Uint8Array(data.data), data.position);
           writable._buffer = newBuf;
@@ -1304,7 +1306,10 @@ describe('triflareVolumes — export/import', () => {
     assert.equal(file2, 'content2', 'file2 should be imported');
 
     // Verify permissions were applied correctly (should be restrictive after import)
-    const canCreate = await extension.checkPermission({ PATH: 'perm_target://dir', PERM: 'create' });
+    const canCreate = await extension.checkPermission({
+      PATH: 'perm_target://dir',
+      PERM: 'create',
+    });
     assert.equal(canCreate, false, 'create permission should be denied on imported directory');
 
     const canWrite = await extension.checkPermission({ PATH: 'perm_target://dir', PERM: 'write' });
@@ -1331,7 +1336,11 @@ describe('triflareVolumes — export/import', () => {
 
     // Verify export represents unlimited quotas with sentinel
     assert.equal(data[vol].sizeLimit, '__INFINITY__', 'exported sizeLimit should be __INFINITY__');
-    assert.equal(data[vol].fileCountLimit, '__INFINITY__', 'exported fileCountLimit should be __INFINITY__');
+    assert.equal(
+      data[vol].fileCountLimit,
+      '__INFINITY__',
+      'exported fileCountLimit should be __INFINITY__'
+    );
 
     // Modify export for new volume (using same type so import can succeed)
     data['unlimited_target://'] = data[vol];
@@ -1352,7 +1361,10 @@ describe('triflareVolumes — export/import', () => {
     assert.equal(targetVol.fileCountLimit, Infinity, 'imported fileCountLimit should be Infinity');
 
     // Verify content
-    const content = await extension.fileRead({ PATH: 'unlimited_target://file.txt', FORMAT: 'text' });
+    const content = await extension.fileRead({
+      PATH: 'unlimited_target://file.txt',
+      FORMAT: 'text',
+    });
     assert.equal(content, 'test data', 'content should be imported');
   });
 
@@ -1746,7 +1758,10 @@ describe('triflareVolumes — edge cases', () => {
     // Should normalize volume name by trimming and adding ://
     const volumes = JSON.parse(await extension.listVolumes());
     const expectedNormalizedName = 'vol with spaces://';
-    assert.ok(volumes.some(v => v === expectedNormalizedName), `Expected to find '${expectedNormalizedName}' in volumes`);
+    assert.ok(
+      volumes.some(v => v === expectedNormalizedName),
+      `Expected to find '${expectedNormalizedName}' in volumes`
+    );
   });
 
   it('respects deeply nested directory creation', async () => {
@@ -1856,6 +1871,26 @@ describe('triflareVolumes — transactions', () => {
     assert.ok(!listed.some(t => t.volume === vol));
     const content = await extension.fileRead({ PATH: vol + 'committed.txt', FORMAT: 'text' });
     assert.equal(content, 'keep');
+  });
+
+  it('rejects beginTransaction when exported snapshot exceeds configured size limit', async () => {
+    const vol = 'txn_test://';
+    const originalLimit = extension._maxTransactionSnapshotBytes;
+    extension._maxTransactionSnapshotBytes = 16;
+    try {
+      await extension.fileWrite({
+        MODE: 'write',
+        STRING: 'payload-over-limit',
+        PATH: vol + 'big.txt',
+      });
+      const res = await extension.beginTransaction({ TXN: 'too-big', VOL: vol });
+      const status = JSON.parse(res);
+      assert.equal(status.status, 'error');
+      assert.equal(status.code, 'INVALID_ARGUMENT');
+      assert.ok(status.message.includes('snapshot exceeds'));
+    } finally {
+      extension._maxTransactionSnapshotBytes = originalLimit;
+    }
   });
 });
 
@@ -1999,5 +2034,22 @@ describe('triflareVolumes — watcher events', () => {
     } finally {
       extension._maxEventLogEntries = originalLimit;
     }
+  });
+
+  it('emits append event when append creates a missing file', async () => {
+    const vol = 'watch_test://';
+    await extension.formatVolume({ VOL: vol });
+    const watcher = await extension.watchPath({ PATH: vol, DEPTH: 'all' });
+    await extension.fileWrite({
+      MODE: 'append',
+      STRING: 'new',
+      PATH: vol + 'created-by-append.txt',
+    });
+    const events = JSON.parse(await extension.pollWatcherEvents({ WATCHER: watcher }));
+    const appendCreated = events.find(
+      e => e.type === 'append' && e.path === vol + 'created-by-append.txt'
+    );
+    assert.ok(appendCreated, 'expected append event for file created via append');
+    await extension.unwatchPath({ WATCHER: watcher });
   });
 });
