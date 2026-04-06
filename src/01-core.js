@@ -696,7 +696,18 @@ class triflareVolumes {
     if (this._textEncoder) {
       return this._textEncoder.encode(input).length;
     }
-    return unescape(encodeURIComponent(input)).length;
+    let bytes = 0;
+    for (let i = 0; i < input.length; i++) {
+      const codePoint = input.codePointAt(i);
+      if (codePoint <= 0x7f) bytes += 1;
+      else if (codePoint <= 0x7ff) bytes += 2;
+      else if (codePoint <= 0xffff) bytes += 3;
+      else {
+        bytes += 4;
+        i++;
+      }
+    }
+    return bytes;
   }
 
   _emitEvent(type, volName, relPath = '', detail = {}) {
@@ -2069,7 +2080,7 @@ class triflareVolumes {
       const exportJson = await this.exportVolume({ VOL: volName });
       const snapshotBytes = this._utf8ByteLength(exportJson);
       if (snapshotBytes > this._maxTransactionSnapshotBytes) {
-        const limitMb = Math.round(this._maxTransactionSnapshotBytes / (1024 * 1024));
+        const limitMb = Math.floor(this._maxTransactionSnapshotBytes / (1024 * 1024));
         throw new Error(
           `INVALID_ARGUMENT: Exported transaction snapshot exceeds ${limitMb} MB limit`
         );
