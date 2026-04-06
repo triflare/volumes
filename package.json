@@ -34,7 +34,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.0",
     "chokidar": "^5.0.0",
-    "eslint": "^10.1.0",
+    "eslint": "^10.2.0",
     "globals": "^17.4.0",
     "prettier": "^3.0.0",
     "terser": "^5.46.1"
