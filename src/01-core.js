@@ -1330,9 +1330,7 @@ class triflareVolumes {
           createDirs: true,
         });
         if (!parent.children.has(name)) {
-          const writeRes = await this._writePath(args);
-          this._emitEvent('append', volName, relPath, { created: true, delegatedToWrite: true });
-          return writeRes; // Fallbacks to checking Create permission
+          return this._writePath(args); // Falls back to checking Create permission
         }
 
         if (!this._getPerms(volName, relPath).write)

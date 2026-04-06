@@ -1823,11 +1823,16 @@ describe('triflareVolumes — transactions', () => {
     const listed = JSON.parse(await extension.listTransactions());
     assert.ok(Array.isArray(listed));
     assert.ok(listed.some(t => t.volume === 'txn_test://' && t.name === 'tx1'));
+
+    const commit = await extension.commitTransaction({ VOL: 'txn_test://' });
+    const commitStatus = JSON.parse(commit);
+    assert.equal(commitStatus.status, 'success');
   });
 
   it('rolls back file changes made during an active transaction', async () => {
     const vol = 'txn_test://';
     await extension.fileWrite({ MODE: 'write', STRING: 'before', PATH: vol + 'state.txt' });
+    await extension.beginTransaction({ TXN: 'tx-rollback', VOL: vol });
     await extension.fileWrite({ MODE: 'write', STRING: 'after', PATH: vol + 'state.txt' });
 
     const rollback = await extension.rollbackTransaction({ VOL: vol });
@@ -1835,7 +1840,7 @@ describe('triflareVolumes — transactions', () => {
     assert.equal(rollbackStatus.status, 'success');
 
     const content = await extension.fileRead({ PATH: vol + 'state.txt', FORMAT: 'text' });
-    assert.equal(content, '');
+    assert.equal(content, 'before');
   });
 
   it('commits transaction and removes it from active list', async () => {
