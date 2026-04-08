@@ -1,7 +1,7 @@
 {
   "name": "Volumes",
   "id": "triflareVolumes",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Custom OPFS-powered virtual file system extension for TurboWarp & other Scratch mods.",
   "author": "Triflare",
   "license": "GPLv3.0",
