@@ -2605,7 +2605,10 @@ class triflareVolumes {
       try {
         data = JSON.parse(String(args.JSON));
       } catch (e) {
-        throw new Error('INVALID_ARGUMENT: Invalid JSON', { cause: e });
+        throw new Error(
+          `INVALID_ARGUMENT: Invalid JSON — ${e.message || String(e)}`,
+          { cause: e }
+        );
       }
 
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
@@ -2673,7 +2676,7 @@ class triflareVolumes {
         if (!node || typeof node !== 'object') return;
         if (node.type === 'file') {
           const content = node.content || '';
-          // Use content string length as a fast size proxy to avoid full comparisons
+          // Store content length for a fast pre-filter: if lengths differ, files definitely differ
           output.set(currentPath, { size: content.length, content });
           return;
         }
@@ -2699,8 +2702,10 @@ class triflareVolumes {
           added.push(path);
         } else {
           const entry1 = m1.get(path);
-          // Optimization: only do full string comparison when sizes match
-          if (entry1.size !== entry2.size || entry1.content !== entry2.content) {
+          // Optimization: skip full content comparison when lengths differ (sizes are O(1) to compare)
+          if (entry1.size !== entry2.size) {
+            modified.push(path);
+          } else if (entry1.content !== entry2.content) {
             modified.push(path);
           }
         }
