@@ -2605,10 +2605,7 @@ class triflareVolumes {
       try {
         data = JSON.parse(String(args.JSON));
       } catch (e) {
-        throw new Error(
-          `INVALID_ARGUMENT: Invalid JSON — ${e.message || String(e)}`,
-          { cause: e }
-        );
+        throw new Error(`INVALID_ARGUMENT: Invalid JSON — ${e.message || String(e)}`, { cause: e });
       }
 
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
@@ -2640,7 +2637,14 @@ class triflareVolumes {
         fileCountLimit: Infinity,
         size: 0,
         fileCount: 0,
-        perms: { read: true, write: false, create: false, view: true, delete: false, control: false },
+        perms: {
+          read: true,
+          write: false,
+          create: false,
+          view: true,
+          delete: false,
+          control: false,
+        },
       };
 
       this._emitEvent('mount', volName, '', { archiveType: 'VARCH' });
