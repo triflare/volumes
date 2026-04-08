@@ -2707,14 +2707,15 @@ class triflareVolumes {
       const s1 = JSON.parse(byVol.get(snap1))[volName];
       const s2 = JSON.parse(byVol.get(snap2))[volName];
 
-      // Flatten a snapshot tree to a Map of relPath -> { size, content }
+      // Flatten a snapshot tree to a Map of relPath -> { size, mime, content }
       // Only file nodes are included; directories are skipped.
       const flattenForDelta = (node, currentPath, output) => {
         if (!node || typeof node !== 'object') return;
         if (node.type === 'file') {
           const content = node.content || '';
+          const mime = node.mime || 'application/octet-stream';
           // Store content length for a fast pre-filter: if lengths differ, files definitely differ
-          output.set(currentPath, { size: content.length, content });
+          output.set(currentPath, { size: content.length, mime, content });
           return;
         }
         if (node.children && typeof node.children === 'object') {
@@ -2730,26 +2731,36 @@ class triflareVolumes {
       flattenForDelta(s1.tree, '', m1);
       flattenForDelta(s2.tree, '', m2);
 
+      // Each entry in the result carries enough information to apply (or reverse) the diff:
+      //   added    — { path, mime, content }           write this file to apply
+      //   modified — { path, mime, before, after }     write `after` to apply, `before` to revert
+      //   deleted  — { path, mime, content }           delete path to apply, write content to revert
       const added = [];
       const modified = [];
       const deleted = [];
 
       for (const [path, entry2] of m2.entries()) {
         if (!m1.has(path)) {
-          added.push(path);
+          added.push({ path, mime: entry2.mime, content: entry2.content });
         } else {
           const entry1 = m1.get(path);
           // Optimization: skip full content comparison when lengths differ (sizes are O(1) to compare)
-          if (entry1.size !== entry2.size) {
-            modified.push(path);
-          } else if (entry1.content !== entry2.content) {
-            modified.push(path);
+          if (
+            entry1.size !== entry2.size ||
+            (entry1.size === entry2.size && entry1.content !== entry2.content)
+          ) {
+            modified.push({
+              path,
+              mime: entry2.mime,
+              before: entry1.content,
+              after: entry2.content,
+            });
           }
         }
       }
 
-      for (const path of m1.keys()) {
-        if (!m2.has(path)) deleted.push(path);
+      for (const [path, entry1] of m1.entries()) {
+        if (!m2.has(path)) deleted.push({ path, mime: entry1.mime, content: entry1.content });
       }
 
       this.lastError = JSON.stringify({ status: 'success' });

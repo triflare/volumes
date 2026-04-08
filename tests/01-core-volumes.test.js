@@ -2246,31 +2246,72 @@ describe('triflareVolumes — snapshotDelta', () => {
     assert.ok(Array.isArray(delta.deleted), 'should have deleted array');
   });
 
+  it('added entries have path, mime, and content fields', async () => {
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
+    );
+    const addedEntry = delta.added.find(e => e.path === 'b.txt');
+    assert.ok(addedEntry, 'b.txt should be in added');
+    assert.ok(typeof addedEntry.mime === 'string', 'added entry should have mime');
+    assert.ok(typeof addedEntry.content === 'string', 'added entry should have content');
+  });
+
+  it('modified entries have path, mime, before, and after fields', async () => {
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
+    );
+    const modEntry = delta.modified.find(e => e.path === 'common.txt');
+    assert.ok(modEntry, 'common.txt should be in modified');
+    assert.ok(typeof modEntry.mime === 'string', 'modified entry should have mime');
+    assert.ok(typeof modEntry.before === 'string', 'modified entry should have before content');
+    assert.ok(typeof modEntry.after === 'string', 'modified entry should have after content');
+    assert.notEqual(modEntry.before, modEntry.after, 'before and after should differ');
+  });
+
+  it('deleted entries have path, mime, and content fields', async () => {
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
+    );
+    const delEntry = delta.deleted.find(e => e.path === 'a.txt');
+    assert.ok(delEntry, 'a.txt should be in deleted');
+    assert.ok(typeof delEntry.mime === 'string', 'deleted entry should have mime');
+    assert.ok(typeof delEntry.content === 'string', 'deleted entry should have content');
+  });
+
   it('correctly identifies added paths', async () => {
     const delta = JSON.parse(
       await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
     );
-    assert.ok(delta.added.includes('b.txt'), 'b.txt should be in added');
-    assert.ok(!delta.added.includes('common.txt'), 'common.txt should not be added');
-    assert.ok(!delta.added.includes('a.txt'), 'a.txt should not be added');
+    assert.ok(delta.added.some(e => e.path === 'b.txt'), 'b.txt should be in added');
+    assert.ok(!delta.added.some(e => e.path === 'common.txt'), 'common.txt should not be added');
+    assert.ok(!delta.added.some(e => e.path === 'a.txt'), 'a.txt should not be added');
   });
 
   it('correctly identifies modified paths', async () => {
     const delta = JSON.parse(
       await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
     );
-    assert.ok(delta.modified.includes('common.txt'), 'common.txt should be modified');
-    assert.ok(!delta.modified.includes('a.txt'), 'deleted a.txt should not be in modified');
-    assert.ok(!delta.modified.includes('b.txt'), 'new b.txt should not be in modified');
+    assert.ok(delta.modified.some(e => e.path === 'common.txt'), 'common.txt should be modified');
+    assert.ok(
+      !delta.modified.some(e => e.path === 'a.txt'),
+      'deleted a.txt should not be in modified'
+    );
+    assert.ok(
+      !delta.modified.some(e => e.path === 'b.txt'),
+      'new b.txt should not be in modified'
+    );
   });
 
   it('correctly identifies deleted paths', async () => {
     const delta = JSON.parse(
       await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
     );
-    assert.ok(delta.deleted.includes('a.txt'), 'a.txt should be deleted');
-    assert.ok(!delta.deleted.includes('b.txt'), 'new b.txt should not be deleted');
-    assert.ok(!delta.deleted.includes('common.txt'), 'common.txt should not be deleted');
+    assert.ok(delta.deleted.some(e => e.path === 'a.txt'), 'a.txt should be deleted');
+    assert.ok(!delta.deleted.some(e => e.path === 'b.txt'), 'new b.txt should not be deleted');
+    assert.ok(
+      !delta.deleted.some(e => e.path === 'common.txt'),
+      'common.txt should not be deleted'
+    );
   });
 
   it('size-short-circuit: reports unchanged files as not modified', async () => {
@@ -2281,6 +2322,19 @@ describe('triflareVolumes — snapshotDelta', () => {
     assert.equal(delta.added.length, 0, 'identical snapshots should have no added');
     assert.equal(delta.modified.length, 0, 'identical snapshots should have no modified');
     assert.equal(delta.deleted.length, 0, 'identical snapshots should have no deleted');
+  });
+
+  it('before/after content is base64 and decodes to the written strings', async () => {
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
+    );
+    const modEntry = delta.modified.find(e => e.path === 'common.txt');
+    assert.equal(atob(modEntry.before), 'original', 'before should decode to original content');
+    assert.equal(atob(modEntry.after), 'modified', 'after should decode to modified content');
+    const delEntry = delta.deleted.find(e => e.path === 'a.txt');
+    assert.equal(atob(delEntry.content), 'will-be-deleted', 'deleted content should be recoverable');
+    const addEntry = delta.added.find(e => e.path === 'b.txt');
+    assert.equal(atob(addEntry.content), 'brand-new', 'added content should be present');
   });
 
   it('returns error for missing snapshot', async () => {
