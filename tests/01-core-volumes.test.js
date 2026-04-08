@@ -2082,3 +2082,335 @@ describe('triflareVolumes — watcher events', () => {
     await extension.unwatchPath({ WATCHER: watcher });
   });
 });
+
+// ===== VIRTUAL ARCHIVE (VARCH) =====
+
+describe('triflareVolumes — virtual archive (VArch)', () => {
+  let archiveJSON;
+
+  before(async () => {
+    // Build a small RAM volume and export it so tests have a valid archive payload
+    const src = 'varch_src://';
+    await extension.mountAs({ VOL: src, TYPE: 'RAM' });
+    await extension.formatVolume({ VOL: src });
+    await extension.fileWrite({ MODE: 'write', STRING: 'hello archive', PATH: src + 'readme.txt' });
+    await extension.fileWrite({
+      MODE: 'write',
+      STRING: 'data:text/plain;base64,' + btoa('binary data'),
+      PATH: src + 'sub/data.bin',
+    });
+    archiveJSON = await extension.exportVolume({ VOL: src });
+  });
+
+  it('mounts a VARCH volume from exported JSON', async () => {
+    const res = await extension.mountArchive({ JSON: archiveJSON, VOL: 'arc1://' });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'success');
+    const vols = JSON.parse(await extension.listVolumes());
+    assert.ok(vols.includes('arc1://'));
+  });
+
+  it('reads a file from a VARCH volume', async () => {
+    const content = await extension.fileRead({ PATH: 'arc1://readme.txt', FORMAT: 'text' });
+    assert.equal(content, 'hello archive');
+  });
+
+  it('reads a file in a subdirectory from a VARCH volume', async () => {
+    const content = await extension.fileRead({ PATH: 'arc1://sub/data.bin', FORMAT: 'text' });
+    assert.equal(content, 'binary data');
+  });
+
+  it('listFiles returns files from a VARCH volume', async () => {
+    const files = JSON.parse(await extension.listFiles({ DEPTH: 'immediate', PATH: 'arc1://' }));
+    assert.ok(files.includes('readme.txt'), 'should list readme.txt');
+    assert.ok(files.includes('sub'), 'should list sub directory');
+  });
+
+  it('listFiles returns all files recursively from a VARCH volume', async () => {
+    const files = JSON.parse(await extension.listFiles({ DEPTH: 'all', PATH: 'arc1://' }));
+    assert.ok(files.includes('readme.txt'));
+    assert.ok(files.includes('sub/data.bin'));
+  });
+
+  it('pathCheck: exists returns true for a VARCH file', async () => {
+    const exists = await extension.pathCheck({ PATH: 'arc1://readme.txt', CONDITION: 'exists' });
+    assert.equal(exists, true);
+  });
+
+  it('pathCheck: is a directory returns true for a VARCH directory', async () => {
+    const isDir = await extension.pathCheck({ PATH: 'arc1://sub', CONDITION: 'is a directory' });
+    assert.equal(isDir, true);
+  });
+
+  it('checkPermission: read is allowed on a VARCH path', async () => {
+    const canRead = await extension.checkPermission({ PATH: 'arc1://readme.txt', PERM: 'read' });
+    assert.equal(canRead, true);
+  });
+
+  it('checkPermission: write is denied on a VARCH path', async () => {
+    const canWrite = await extension.checkPermission({ PATH: 'arc1://readme.txt', PERM: 'write' });
+    assert.equal(canWrite, false);
+  });
+
+  it('write to VARCH returns FORBIDDEN error', async () => {
+    const res = await extension.fileWrite({
+      MODE: 'write',
+      STRING: 'should fail',
+      PATH: 'arc1://readme.txt',
+    });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'error');
+    assert.equal(status.code, 'FORBIDDEN');
+  });
+
+  it('append to VARCH returns FORBIDDEN error', async () => {
+    const res = await extension.fileWrite({
+      MODE: 'append',
+      STRING: 'should fail',
+      PATH: 'arc1://readme.txt',
+    });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'error');
+    assert.equal(status.code, 'FORBIDDEN');
+  });
+
+  it('delete on VARCH returns FORBIDDEN error', async () => {
+    const res = await extension.deletePath({ PATH: 'arc1://readme.txt' });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'error');
+    assert.equal(status.code, 'FORBIDDEN');
+  });
+
+  it('format on VARCH returns FORBIDDEN error', async () => {
+    const res = await extension.formatVolume({ VOL: 'arc1://' });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'error');
+    assert.equal(status.code, 'FORBIDDEN');
+  });
+
+  it('setPermission on VARCH returns FORBIDDEN error', async () => {
+    const res = await extension.setPermission({
+      PATH: 'arc1://readme.txt',
+      PERM: 'read',
+      VALUE: 'deny',
+    });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'error');
+    assert.equal(status.code, 'FORBIDDEN');
+  });
+
+  it('rejects mounting an archive over an already-mounted volume', async () => {
+    const res = await extension.mountArchive({ JSON: archiveJSON, VOL: 'arc1://' });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'error');
+    assert.equal(status.code, 'TYPE_MISMATCH');
+  });
+
+  it('rejects invalid JSON for mountArchive', async () => {
+    const res = await extension.mountArchive({ JSON: 'not-json', VOL: 'arc_bad://' });
+    const status = JSON.parse(res);
+    assert.equal(status.status, 'error');
+    assert.equal(status.code, 'INVALID_ARGUMENT');
+  });
+});
+
+// ===== SNAPSHOT DELTA =====
+
+describe('triflareVolumes — snapshotDelta', () => {
+  before(async () => {
+    const vol = 'delta_test://';
+    await extension.mountAs({ VOL: vol, TYPE: 'RAM' });
+    await extension.formatVolume({ VOL: vol });
+    // snap_a: has a.txt and common.txt
+    await extension.fileWrite({ MODE: 'write', STRING: 'original', PATH: vol + 'common.txt' });
+    await extension.fileWrite({ MODE: 'write', STRING: 'will-be-deleted', PATH: vol + 'a.txt' });
+    await extension.createSnapshot({ SNAP: 'snap_a', VOL: vol });
+    // snap_b: deletes a.txt, modifies common.txt, adds b.txt
+    await extension.deletePath({ PATH: vol + 'a.txt' });
+    await extension.fileWrite({ MODE: 'write', STRING: 'modified', PATH: vol + 'common.txt' });
+    await extension.fileWrite({ MODE: 'write', STRING: 'brand-new', PATH: vol + 'b.txt' });
+    await extension.createSnapshot({ SNAP: 'snap_b', VOL: vol });
+  });
+
+  it('returns added, modified, deleted arrays', async () => {
+    const deltaStr = await extension.snapshotDelta({
+      SNAP1: 'snap_a',
+      SNAP2: 'snap_b',
+      VOL: 'delta_test://',
+    });
+    const delta = JSON.parse(deltaStr);
+    assert.ok(Array.isArray(delta.added), 'should have added array');
+    assert.ok(Array.isArray(delta.modified), 'should have modified array');
+    assert.ok(Array.isArray(delta.deleted), 'should have deleted array');
+  });
+
+  it('added entries have path, mime, and content fields', async () => {
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
+    );
+    const addedEntry = delta.added.find(e => e.path === 'b.txt');
+    assert.ok(addedEntry, 'b.txt should be in added');
+    assert.ok(typeof addedEntry.mime === 'string', 'added entry should have mime');
+    assert.ok(typeof addedEntry.content === 'string', 'added entry should have content');
+  });
+
+  it('modified entries have path, mime, before, and after fields', async () => {
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
+    );
+    const modEntry = delta.modified.find(e => e.path === 'common.txt');
+    assert.ok(modEntry, 'common.txt should be in modified');
+    assert.ok(typeof modEntry.mime === 'string', 'modified entry should have mime');
+    assert.ok(typeof modEntry.before === 'string', 'modified entry should have before content');
+    assert.ok(typeof modEntry.after === 'string', 'modified entry should have after content');
+    assert.notEqual(modEntry.before, modEntry.after, 'before and after should differ');
+  });
+
+  it('deleted entries have path, mime, and content fields', async () => {
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
+    );
+    const delEntry = delta.deleted.find(e => e.path === 'a.txt');
+    assert.ok(delEntry, 'a.txt should be in deleted');
+    assert.ok(typeof delEntry.mime === 'string', 'deleted entry should have mime');
+    assert.ok(typeof delEntry.content === 'string', 'deleted entry should have content');
+  });
+
+  it('correctly identifies added paths', async () => {
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
+    );
+    assert.ok(
+      delta.added.some(e => e.path === 'b.txt'),
+      'b.txt should be in added'
+    );
+    assert.ok(!delta.added.some(e => e.path === 'common.txt'), 'common.txt should not be added');
+    assert.ok(!delta.added.some(e => e.path === 'a.txt'), 'a.txt should not be added');
+  });
+
+  it('correctly identifies modified paths', async () => {
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
+    );
+    assert.ok(
+      delta.modified.some(e => e.path === 'common.txt'),
+      'common.txt should be modified'
+    );
+    assert.ok(
+      !delta.modified.some(e => e.path === 'a.txt'),
+      'deleted a.txt should not be in modified'
+    );
+    assert.ok(!delta.modified.some(e => e.path === 'b.txt'), 'new b.txt should not be in modified');
+  });
+
+  it('correctly identifies deleted paths', async () => {
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
+    );
+    assert.ok(
+      delta.deleted.some(e => e.path === 'a.txt'),
+      'a.txt should be deleted'
+    );
+    assert.ok(!delta.deleted.some(e => e.path === 'b.txt'), 'new b.txt should not be deleted');
+    assert.ok(
+      !delta.deleted.some(e => e.path === 'common.txt'),
+      'common.txt should not be deleted'
+    );
+  });
+
+  it('identical snapshots return empty delta arrays', async () => {
+    // snap_a and snap_a are identical — nothing should be in any delta array
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_a', VOL: 'delta_test://' })
+    );
+    assert.equal(delta.added.length, 0, 'identical snapshots should have no added');
+    assert.equal(delta.modified.length, 0, 'identical snapshots should have no modified');
+    assert.equal(delta.deleted.length, 0, 'identical snapshots should have no deleted');
+  });
+
+  it('before/after content is base64 and decodes to the written strings', async () => {
+    const delta = JSON.parse(
+      await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
+    );
+    const modEntry = delta.modified.find(e => e.path === 'common.txt');
+    assert.equal(atob(modEntry.before), 'original', 'before should decode to original content');
+    assert.equal(atob(modEntry.after), 'modified', 'after should decode to modified content');
+    const delEntry = delta.deleted.find(e => e.path === 'a.txt');
+    assert.equal(
+      atob(delEntry.content),
+      'will-be-deleted',
+      'deleted content should be recoverable'
+    );
+    const addEntry = delta.added.find(e => e.path === 'b.txt');
+    assert.equal(atob(addEntry.content), 'brand-new', 'added content should be present');
+  });
+
+  it('returns error for missing snapshot', async () => {
+    const deltaStr = await extension.snapshotDelta({
+      SNAP1: 'does-not-exist',
+      SNAP2: 'snap_b',
+      VOL: 'delta_test://',
+    });
+    const delta = JSON.parse(deltaStr);
+    // On error, snapshotDelta returns fallback { added:[], modified:[], deleted:[] }
+    assert.ok(Array.isArray(delta.added) && delta.added.length === 0);
+    const err = JSON.parse(extension.lastError);
+    assert.equal(err.status, 'error');
+    assert.equal(err.code, 'NOT_FOUND');
+  });
+});
+
+// ===== ADVANCED BLOCK TOGGLE =====
+
+describe('triflareVolumes — advanced block toggle', () => {
+  before(() => {
+    extension._advancedBlocksHidden = true;
+    Scratch.vm.extensionManager._refreshBlocksCalls = 0;
+  });
+
+  it('starts with advanced blocks hidden by default', () => {
+    assert.equal(extension._advancedBlocksHidden, true);
+    const info = extension.getInfo();
+    const txBlock = info.blocks.find(b => b.opcode === 'beginTransaction');
+    assert.equal(txBlock.hideFromPalette, true, 'beginTransaction should be hidden initially');
+    const snapBlock = info.blocks.find(b => b.opcode === 'snapshotDelta');
+    assert.equal(snapBlock.hideFromPalette, true, 'snapshotDelta should be hidden initially');
+  });
+
+  it('toggle button text reflects current hidden state (hidden → "Show")', () => {
+    const info = extension.getInfo();
+    const button = info.blocks.find(b => b.blockType === Scratch.BlockType.BUTTON);
+    assert.ok(button, 'BUTTON block should exist');
+    assert.ok(button.text.includes('Show'), 'button should say "Show" when blocks are hidden');
+  });
+
+  it('toggleAdvancedBlocks reveals advanced blocks', () => {
+    const beforeCalls = Scratch.vm.extensionManager._refreshBlocksCalls || 0;
+    extension.toggleAdvancedBlocks();
+    assert.equal(extension._advancedBlocksHidden, false);
+    const info = extension.getInfo();
+    const txBlock = info.blocks.find(b => b.opcode === 'beginTransaction');
+    assert.equal(txBlock.hideFromPalette, false, 'beginTransaction should be visible after toggle');
+    const snapBlock = info.blocks.find(b => b.opcode === 'snapshotDelta');
+    assert.equal(snapBlock.hideFromPalette, false, 'snapshotDelta should be visible after toggle');
+    const afterCalls = Scratch.vm.extensionManager._refreshBlocksCalls || 0;
+    assert.equal(afterCalls, beforeCalls + 1, 'refreshBlocks should be called once');
+  });
+
+  it('toggle button text reflects current state (visible → "Hide")', () => {
+    const info = extension.getInfo();
+    const button = info.blocks.find(b => b.blockType === Scratch.BlockType.BUTTON);
+    assert.ok(button.text.includes('Hide'), 'button should say "Hide" when blocks are visible');
+  });
+
+  it('toggleAdvancedBlocks hides blocks again on second call', () => {
+    const beforeCalls = Scratch.vm.extensionManager._refreshBlocksCalls || 0;
+    extension.toggleAdvancedBlocks();
+    assert.equal(extension._advancedBlocksHidden, true);
+    const info = extension.getInfo();
+    const txBlock = info.blocks.find(b => b.opcode === 'beginTransaction');
+    assert.equal(txBlock.hideFromPalette, true, 'beginTransaction should be hidden again');
+    const afterCalls = Scratch.vm.extensionManager._refreshBlocksCalls || 0;
+    assert.equal(afterCalls, beforeCalls + 1, 'refreshBlocks should be called once');
+  });
+});

@@ -25,6 +25,7 @@ export function createScratchMock() {
     translate: text => text,
     BlockType: {
       BOOLEAN: 'Boolean',
+      BUTTON: 'button',
       COMMAND: 'command',
       HAT: 'hat',
       LOOP: 'loop',
@@ -37,6 +38,15 @@ export function createScratchMock() {
       IMAGE: 'image',
       NUMBER: 'number',
       STRING: 'string',
+    },
+    vm: {
+      extensionManager: {
+        refreshBlocks() {
+          // Track calls for test assertions
+          if (!this._refreshBlocksCalls) this._refreshBlocksCalls = 0;
+          this._refreshBlocksCalls++;
+        },
+      },
     },
   };
 }

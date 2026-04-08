@@ -27,6 +27,8 @@ class triflareVolumes {
     this._watchers = new Map(); // watcherId -> { id, volName, relPath, recursive, cursor }
     this._nextWatcherId = 1;
     this._textEncoder = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+    // Toggle visibility of advanced block sections (Transactions, Snapshots, Watchers, Management)
+    this._advancedBlocksHidden = true;
 
     this._ready = this._initVolumes().catch(e => {
       this.lastError = JSON.stringify({
@@ -198,11 +200,42 @@ class triflareVolumes {
           },
         },
 
+        // --- Advanced Block Toggle ---
+        {
+          blockType: Scratch.BlockType.BUTTON,
+          text: this._advancedBlocksHidden
+            ? Scratch.translate('Show Advanced Blocks ▼')
+            : Scratch.translate('Hide Advanced Blocks ▲'),
+          func: 'toggleAdvancedBlocks',
+        },
+
+        // --- Management (advanced) ---
+        {
+          blockType: Scratch.BlockType.LABEL,
+          text: Scratch.translate('Management'),
+          hideFromPalette: this._advancedBlocksHidden,
+        },
+        {
+          opcode: 'mountArchive',
+          blockType: Scratch.BlockType.COMMAND,
+          hideFromPalette: this._advancedBlocksHidden,
+          text: Scratch.translate('mount archive [JSON] to volume [VOL]'),
+          arguments: {
+            JSON: { type: Scratch.ArgumentType.STRING, defaultValue: '{}' },
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'archive://' },
+          },
+        },
+
         // --- Transactions ---
-        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Transactions') },
+        {
+          blockType: Scratch.BlockType.LABEL,
+          text: Scratch.translate('Transactions'),
+          hideFromPalette: this._advancedBlocksHidden,
+        },
         {
           opcode: 'beginTransaction',
           blockType: Scratch.BlockType.COMMAND,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('begin transaction [TXN] on [VOL]'),
           arguments: {
             TXN: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' },
@@ -212,6 +245,7 @@ class triflareVolumes {
         {
           opcode: 'commitTransaction',
           blockType: Scratch.BlockType.COMMAND,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('commit transaction on [VOL]'),
           arguments: {
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
@@ -220,6 +254,7 @@ class triflareVolumes {
         {
           opcode: 'rollbackTransaction',
           blockType: Scratch.BlockType.COMMAND,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('rollback transaction on [VOL]'),
           arguments: {
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
@@ -228,15 +263,21 @@ class triflareVolumes {
         {
           opcode: 'listTransactions',
           blockType: Scratch.BlockType.REPORTER,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('list active transactions'),
           disableMonitor: false,
         },
 
         // --- Snapshots ---
-        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Snapshots') },
+        {
+          blockType: Scratch.BlockType.LABEL,
+          text: Scratch.translate('Snapshots'),
+          hideFromPalette: this._advancedBlocksHidden,
+        },
         {
           opcode: 'createSnapshot',
           blockType: Scratch.BlockType.COMMAND,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('create snapshot [SNAP] of [VOL]'),
           arguments: {
             SNAP: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap1' },
@@ -246,6 +287,7 @@ class triflareVolumes {
         {
           opcode: 'restoreSnapshot',
           blockType: Scratch.BlockType.COMMAND,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('restore snapshot [SNAP] on [VOL]'),
           arguments: {
             SNAP: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap1' },
@@ -255,6 +297,7 @@ class triflareVolumes {
         {
           opcode: 'deleteSnapshot',
           blockType: Scratch.BlockType.COMMAND,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('delete snapshot [SNAP] on [VOL]'),
           arguments: {
             SNAP: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap1' },
@@ -264,6 +307,7 @@ class triflareVolumes {
         {
           opcode: 'diffSnapshots',
           blockType: Scratch.BlockType.REPORTER,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('diff snapshots [A] and [B] on [VOL]'),
           arguments: {
             A: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap1' },
@@ -275,6 +319,7 @@ class triflareVolumes {
         {
           opcode: 'listSnapshots',
           blockType: Scratch.BlockType.REPORTER,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('list snapshots on [VOL]'),
           arguments: {
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
@@ -283,10 +328,15 @@ class triflareVolumes {
         },
 
         // --- Watchers ---
-        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Watchers') },
+        {
+          blockType: Scratch.BlockType.LABEL,
+          text: Scratch.translate('Watchers'),
+          hideFromPalette: this._advancedBlocksHidden,
+        },
         {
           opcode: 'watchPath',
           blockType: Scratch.BlockType.REPORTER,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('watch [PATH] depth [DEPTH]'),
           arguments: {
             PATH: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
@@ -297,6 +347,7 @@ class triflareVolumes {
         {
           opcode: 'unwatchPath',
           blockType: Scratch.BlockType.COMMAND,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('unwatch [WATCHER]'),
           arguments: {
             WATCHER: { type: Scratch.ArgumentType.STRING, defaultValue: '1' },
@@ -305,6 +356,7 @@ class triflareVolumes {
         {
           opcode: 'pollWatcherEvents',
           blockType: Scratch.BlockType.REPORTER,
+          hideFromPalette: this._advancedBlocksHidden,
           text: Scratch.translate('poll events for [WATCHER]'),
           arguments: {
             WATCHER: { type: Scratch.ArgumentType.STRING, defaultValue: '1' },
@@ -318,6 +370,20 @@ class triflareVolumes {
           opcode: 'getLastError',
           blockType: Scratch.BlockType.REPORTER,
           text: Scratch.translate('last error'),
+          disableMonitor: false,
+        },
+        {
+          opcode: 'snapshotDelta',
+          blockType: Scratch.BlockType.REPORTER,
+          hideFromPalette: this._advancedBlocksHidden,
+          text: Scratch.translate(
+            'get changes from snapshot [SNAP1] to snapshot [SNAP2] on volume [VOL]'
+          ),
+          arguments: {
+            SNAP1: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap1' },
+            SNAP2: { type: Scratch.ArgumentType.STRING, defaultValue: 'snap2' },
+            VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
+          },
           disableMonitor: false,
         },
         {
@@ -391,18 +457,46 @@ class triflareVolumes {
   // --- Utility Functions ---
   _assertRuntimeSupport() {
     let unsupportedReason = '';
-    if (!this._supportsOPFS()) {
+
+    // Explicitly detect file:// and fail fast (common cause when opening local files)
+    try {
+      if (
+        typeof window !== 'undefined' &&
+        window.location &&
+        window.location.protocol === 'file:'
+      ) {
+        unsupportedReason =
+          'Volumes requires a secure context (HTTPS). It appears you are running from a file:// URI — serve the page over HTTPS or use localhost.';
+      }
+    } catch (_e) {
+      /* empty */
+    }
+
+    // Prefer to fail fast on insecure contexts (covers http: or other non-secure contexts)
+    if (
+      !unsupportedReason &&
+      typeof globalThis.isSecureContext === 'boolean' &&
+      !globalThis.isSecureContext
+    ) {
       unsupportedReason =
-        'Volumes requires OPFS support. This usually means running in an insecure or unsupported context.';
-    } else if (typeof globalThis.isSecureContext === 'boolean' && !globalThis.isSecureContext) {
-      unsupportedReason = 'Volumes requires a secure context (HTTPS).';
-    } else if (
+        'Volumes requires a secure context (HTTPS). Serve over HTTPS or use localhost.';
+    }
+
+    // Sandboxed frames cannot access required platform APIs
+    if (
+      !unsupportedReason &&
       typeof window !== 'undefined' &&
       window.frameElement &&
       typeof window.frameElement.hasAttribute === 'function' &&
       window.frameElement.hasAttribute('sandbox')
     ) {
       unsupportedReason = 'Volumes cannot run in a sandboxed frame.';
+    }
+
+    // Finally, verify OPFS support specifically
+    if (!unsupportedReason && !this._supportsOPFS()) {
+      // Keep this message short and stable for tests which assert on it.
+      unsupportedReason = 'Volumes requires OPFS support.';
     }
 
     if (!unsupportedReason) return;
@@ -633,6 +727,9 @@ class triflareVolumes {
       } catch (_e) {
         return { ...defaultPerms };
       }
+    } else if (this.volumes[volName].type === 'VARCH') {
+      // VARCH volumes are inherently read-only regardless of embedded node perms
+      return { read: true, write: false, create: false, view: true, delete: false, control: false };
     } else {
       const metaKey = `${volName}${relPath}`;
       return this._opfsPerms.get(metaKey) || { ...defaultPerms };
@@ -1184,6 +1281,9 @@ class triflareVolumes {
       const vol = this.volumes[volName];
       if (!vol) throw new Error('NOT_FOUND: Volume not found');
 
+      // VARCH volumes are read-only; formatting is not allowed
+      if (vol.type === 'VARCH') throw new Error('FORBIDDEN: Volume is Read-Only');
+
       // Align with setPermission root policy: formatting requires root control.
       if (!this._getPerms(volName, '').control)
         throw new Error('PERMISSION_DENIED: Control permission denied');
@@ -1288,6 +1388,8 @@ class triflareVolumes {
     try {
       const { volName, relPath, vol } = this._parse(args.PATH);
       if (!relPath) throw new Error('INVALID_PATH: Cannot write to root');
+      // VARCH volumes are read-only
+      if (vol.type === 'VARCH') throw new Error('FORBIDDEN: Volume is Read-Only');
       const { mime, dataBuf } = this._parseDataOrString(args.STRING);
       let created = false;
 
@@ -1414,6 +1516,8 @@ class triflareVolumes {
     try {
       const { volName, relPath, vol } = this._parse(args.PATH);
       if (!relPath) throw new Error('INVALID_PATH: Cannot append to root');
+      // VARCH volumes are read-only
+      if (vol.type === 'VARCH') throw new Error('FORBIDDEN: Volume is Read-Only');
       const { mime, dataBuf } = this._parseDataOrString(args.STRING);
       let created = false;
 
@@ -1530,6 +1634,11 @@ class triflareVolumes {
         if (node.type === 'dir') throw new Error('TYPE_MISMATCH: Is a directory');
         this.lastError = JSON.stringify({ status: 'success' });
         return new TextDecoder().decode(node.content);
+      } else if (vol.type === 'VARCH') {
+        const node = this._traverseVARCH(volName, relPath);
+        if (node.type === 'dir') throw new Error('TYPE_MISMATCH: Is a directory');
+        this.lastError = JSON.stringify({ status: 'success' });
+        return new TextDecoder().decode(this._base64ToUint8Array(node.content || ''));
       } else {
         const { handle, type } = await this._resolveOPFSNode(volName, relPath);
         if (type === 'directory') throw new Error('TYPE_MISMATCH: Is a directory');
@@ -1555,6 +1664,11 @@ class triflareVolumes {
         if (node.type === 'dir') throw new Error('TYPE_MISMATCH: Is a directory');
         this.lastError = JSON.stringify({ status: 'success' });
         return `data:${node.mime};base64,${this._uint8ArrayToBase64(node.content)}`;
+      } else if (vol.type === 'VARCH') {
+        const node = this._traverseVARCH(volName, relPath);
+        if (node.type === 'dir') throw new Error('TYPE_MISMATCH: Is a directory');
+        this.lastError = JSON.stringify({ status: 'success' });
+        return `data:${node.mime || 'application/octet-stream'};base64,${node.content || ''}`;
       } else {
         const { handle, type } = await this._resolveOPFSNode(volName, relPath);
         if (type === 'directory') throw new Error('TYPE_MISMATCH: Is a directory');
@@ -1582,6 +1696,8 @@ class triflareVolumes {
       }
       if (vol.type === 'RAM') {
         this._traverseRAM(volName, relPath);
+      } else if (vol.type === 'VARCH') {
+        this._traverseVARCH(volName, relPath);
       } else {
         await this._resolveOPFSNode(volName, relPath);
       }
@@ -1604,6 +1720,8 @@ class triflareVolumes {
       let isDir = false;
       if (vol.type === 'RAM') {
         isDir = this._traverseRAM(volName, relPath).type === 'dir';
+      } else if (vol.type === 'VARCH') {
+        isDir = this._traverseVARCH(volName, relPath).type === 'dir';
       } else {
         isDir = (await this._resolveOPFSNode(volName, relPath)).type === 'directory';
       }
@@ -1656,6 +1774,20 @@ class triflareVolumes {
         const node = !relPath ? vol.root : this._traverseRAM(volName, relPath);
         if (node.type !== 'dir') throw new Error('TYPE_MISMATCH: Not a directory');
         traverseRAM(node, isRecursive ? '' : relPath);
+      } else if (vol.type === 'VARCH') {
+        const node = !relPath ? vol.tree : this._traverseVARCH(volName, relPath);
+        if (!node || node.type !== 'dir') throw new Error('TYPE_MISMATCH: Not a directory');
+        const traverseVARCH = (vNode, currentPath) => {
+          if (!vNode || vNode.type !== 'dir' || !vNode.children) return;
+          for (const [name, child] of Object.entries(vNode.children)) {
+            const childRelPath = currentPath ? `${currentPath}/${name}` : name;
+            if (this._getPerms(volName, childRelPath).view) {
+              names.push(isRecursive && currentPath ? `${currentPath}/${name}` : name);
+              if (isRecursive && child.type === 'dir') traverseVARCH(child, childRelPath);
+            }
+          }
+        };
+        traverseVARCH(node, isRecursive ? '' : relPath);
       } else {
         const node = !relPath
           ? {
@@ -1681,6 +1813,8 @@ class triflareVolumes {
     try {
       const { volName, relPath, vol } = this._parse(args.PATH);
       if (!relPath) throw new Error('INVALID_PATH: Cannot delete volume root');
+      // VARCH volumes are read-only
+      if (vol.type === 'VARCH') throw new Error('FORBIDDEN: Volume is Read-Only');
       if (!this._getPerms(volName, relPath).delete)
         throw new Error('PERMISSION_DENIED: Delete permission denied');
 
@@ -1744,6 +1878,17 @@ class triflareVolumes {
     try {
       const target = args.VOL.trim();
       const exportObj = {};
+
+      // Check for VARCH volumes early
+      const volsToCheck =
+        target === 'all'
+          ? Object.keys(this.volumes)
+          : [target.endsWith('://') ? target : target + '://'];
+      for (const volName of volsToCheck) {
+        if (this.volumes[volName] && this.volumes[volName].type === 'VARCH') {
+          throw new Error('FORBIDDEN: operation not allowed on VARCH');
+        }
+      }
 
       const serializeRAMNode = node => {
         if (node.type === 'file') {
@@ -1852,6 +1997,10 @@ class triflareVolumes {
       for (const volName of volsToImport) {
         if (!data[volName]) {
           throw new Error(`NOT_FOUND: Volume ${volName} not found in import payload`);
+        }
+        // Check if target volume is VARCH (read-only archive)
+        if (this.volumes[volName] && this.volumes[volName].type === 'VARCH') {
+          throw new Error('FORBIDDEN: operation not allowed on VARCH');
         }
         const volData = data[volName];
 
@@ -2008,6 +2157,9 @@ class triflareVolumes {
 
       if (vol.type === 'RAM') {
         if (relPath) this._traverseRAM(volName, relPath);
+      } else if (vol.type === 'VARCH') {
+        // VARCH volumes are read-only: control permission is always denied
+        throw new Error('FORBIDDEN: Volume is Read-Only');
       } else {
         if (relPath) await this._resolveOPFSNode(volName, relPath);
       }
@@ -2043,6 +2195,8 @@ class triflareVolumes {
         try {
           if (vol.type === 'RAM') {
             this._traverseRAM(volName, relPath);
+          } else if (vol.type === 'VARCH') {
+            this._traverseVARCH(volName, relPath);
           } else {
             await this._resolveOPFSNode(volName, relPath);
           }
@@ -2072,6 +2226,9 @@ class triflareVolumes {
       const volName = this._normalizeVolumeName(args.VOL);
       const txName = String(args.TXN || 'main').trim() || 'main';
       if (!this.volumes[volName]) throw new Error('NOT_FOUND: Volume not found');
+      if (this.volumes[volName].type === 'VARCH') {
+        throw new Error('FORBIDDEN: operation not allowed on VARCH');
+      }
       if (this._transactions.has(volName))
         throw new Error(`INVALID_ARGUMENT: Transaction already active on ${volName}`);
       const exportJson = await this.exportVolume({ VOL: volName });
@@ -2151,6 +2308,9 @@ class triflareVolumes {
       const snapName = String(args.SNAP || '').trim();
       if (!snapName) throw new Error('INVALID_ARGUMENT: Snapshot name is required');
       if (!this.volumes[volName]) throw new Error('NOT_FOUND: Volume not found');
+      if (this.volumes[volName].type === 'VARCH') {
+        throw new Error('FORBIDDEN: operation not allowed on VARCH');
+      }
       const exportJson = await this.exportVolume({ VOL: volName });
       const parsed = JSON.parse(exportJson);
       if (!parsed[volName]) throw new Error('INTERNAL_ERROR: Failed to capture snapshot');
@@ -2464,6 +2624,188 @@ class triflareVolumes {
       return 'OK';
     } catch (e) {
       return 'FAIL: ' + e.message;
+    }
+  }
+
+  // --- VARCH (Virtual Archive) Engine ---
+
+  _traverseVARCH(volName, relPath) {
+    const vol = this.volumes[volName];
+    const tree = vol.tree;
+    if (!relPath) return tree;
+    const parts = relPath.split('/').filter(p => p);
+    let current = tree;
+    for (const part of parts) {
+      if (
+        !current ||
+        current.type !== 'dir' ||
+        !current.children ||
+        !Object.prototype.hasOwnProperty.call(current.children, part)
+      ) {
+        throw new Error(`NOT_FOUND: Path ${part} does not exist`);
+      }
+      current = current.children[part];
+    }
+    return current;
+  }
+
+  async mountArchive(args) {
+    await this._ready;
+    try {
+      let volName = String(args.VOL || '').trim();
+      if (!volName.endsWith('://')) volName += '://';
+
+      let data;
+      try {
+        data = JSON.parse(String(args.JSON));
+      } catch (e) {
+        throw new Error(`INVALID_ARGUMENT: Invalid JSON — ${e.message || String(e)}`, { cause: e });
+      }
+
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('INVALID_ARGUMENT: JSON must be an object in Volumes export format');
+      }
+
+      if (this.volumes[volName]) {
+        throw new Error(`TYPE_MISMATCH: Volume ${volName} is already mounted`);
+      }
+
+      // Select the tree: prefer the key matching volName, otherwise take the first key
+      let volData = null;
+      if (Object.prototype.hasOwnProperty.call(data, volName)) {
+        volData = data[volName];
+      } else {
+        const keys = Object.keys(data);
+        if (keys.length === 0) throw new Error('INVALID_ARGUMENT: JSON contains no volumes');
+        volData = data[keys[0]];
+      }
+
+      if (!volData || typeof volData !== 'object' || !volData.tree) {
+        throw new Error('INVALID_ARGUMENT: JSON does not contain a valid volume tree');
+      }
+
+      this.volumes[volName] = {
+        type: 'VARCH',
+        tree: volData.tree,
+        sizeLimit: Infinity,
+        fileCountLimit: Infinity,
+        size: 0,
+        fileCount: 0,
+        perms: {
+          read: true,
+          write: false,
+          create: false,
+          view: true,
+          delete: false,
+          control: false,
+        },
+      };
+
+      this._emitEvent('mount', volName, '', { archiveType: 'VARCH' });
+      this.lastError = JSON.stringify({ status: 'success' });
+      return this.lastError;
+    } catch (e) {
+      return this._handleError(e);
+    }
+  }
+
+  // --- Snapshot Delta Diffing ---
+
+  async snapshotDelta(args) {
+    await this._ready;
+    try {
+      const volName = this._normalizeVolumeName(args.VOL);
+      const snap1 = String(args.SNAP1 || '').trim();
+      const snap2 = String(args.SNAP2 || '').trim();
+      if (!snap1 || !snap2) throw new Error('INVALID_ARGUMENT: Snapshot names are required');
+
+      const byVol = this._snapshots.get(volName);
+      if (!byVol || !byVol.has(snap1))
+        throw new Error(`NOT_FOUND: Snapshot ${snap1} not found for ${volName}`);
+      if (!byVol.has(snap2))
+        throw new Error(`NOT_FOUND: Snapshot ${snap2} not found for ${volName}`);
+
+      const s1 = JSON.parse(byVol.get(snap1))[volName];
+      const s2 = JSON.parse(byVol.get(snap2))[volName];
+
+      // Flatten a snapshot tree to a Map of relPath -> { size, mime, content }
+      // Only file nodes are included; directories are skipped.
+      const flattenForDelta = (node, currentPath, output) => {
+        if (!node || typeof node !== 'object') return;
+        if (node.type === 'file') {
+          const content = node.content || '';
+          const mime = node.mime || 'application/octet-stream';
+          // Store content length for a fast pre-filter: if lengths differ, files definitely differ
+          output.set(currentPath, { size: content.length, mime, content });
+          return;
+        }
+        if (node.children && typeof node.children === 'object') {
+          for (const [name, child] of Object.entries(node.children)) {
+            const childPath = currentPath ? `${currentPath}/${name}` : name;
+            flattenForDelta(child, childPath, output);
+          }
+        }
+      };
+
+      const m1 = new Map();
+      const m2 = new Map();
+      flattenForDelta(s1.tree, '', m1);
+      flattenForDelta(s2.tree, '', m2);
+
+      // Each entry in the result carries enough information to apply (or reverse) the diff:
+      //   added    — { path, mime, content }           write this file to apply
+      //   modified — { path, mime, before, after }     write `after` to apply, `before` to revert
+      //   deleted  — { path, mime, content }           delete path to apply, write content to revert
+      const added = [];
+      const modified = [];
+      const deleted = [];
+
+      for (const [path, entry2] of m2.entries()) {
+        if (!m1.has(path)) {
+          added.push({ path, mime: entry2.mime, content: entry2.content });
+        } else {
+          const entry1 = m1.get(path);
+          // Size mismatch short-circuits the expensive string comparison
+          if (entry1.size !== entry2.size) {
+            modified.push({
+              path,
+              mime: entry2.mime,
+              before: entry1.content,
+              after: entry2.content,
+            });
+          } else if (entry1.content !== entry2.content) {
+            modified.push({
+              path,
+              mime: entry2.mime,
+              before: entry1.content,
+              after: entry2.content,
+            });
+          }
+        }
+      }
+
+      for (const [path, entry1] of m1.entries()) {
+        if (!m2.has(path)) deleted.push({ path, mime: entry1.mime, content: entry1.content });
+      }
+
+      this.lastError = JSON.stringify({ status: 'success' });
+      return JSON.stringify({ added, modified, deleted });
+    } catch (e) {
+      this._handleError(e);
+      return JSON.stringify({ added: [], modified: [], deleted: [] });
+    }
+  }
+
+  // --- Advanced Block Visibility Toggle ---
+
+  toggleAdvancedBlocks() {
+    this._advancedBlocksHidden = !this._advancedBlocksHidden;
+    try {
+      if (Scratch.vm && Scratch.vm.extensionManager) {
+        Scratch.vm.extensionManager.refreshBlocks();
+      }
+    } catch (_) {
+      // Ignore if refreshBlocks is unavailable in this runtime
     }
   }
 }
