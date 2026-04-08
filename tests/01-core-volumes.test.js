@@ -12,7 +12,7 @@
  * - Size and file count limits
  */
 
-import { describe, it, before, after, beforeEach } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { installScratchMock } from './helpers/mock-scratch.js';
 
