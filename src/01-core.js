@@ -495,8 +495,8 @@ class triflareVolumes {
 
     // Finally, verify OPFS support specifically
     if (!unsupportedReason && !this._supportsOPFS()) {
-      unsupportedReason =
-        'Volumes requires OPFS support (navigator.storage.getDirectory). Your browser or platform may not support it.';
+      // Keep this message short and stable for tests which assert on it.
+      unsupportedReason = 'Volumes requires OPFS support.';
     }
 
     if (!unsupportedReason) return;
