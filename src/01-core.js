@@ -2765,11 +2765,15 @@ class triflareVolumes {
           added.push({ path, mime: entry2.mime, content: entry2.content });
         } else {
           const entry1 = m1.get(path);
-          // Optimization: skip full content comparison when lengths differ (sizes are O(1) to compare)
-          if (
-            entry1.size !== entry2.size ||
-            (entry1.size === entry2.size && entry1.content !== entry2.content)
-          ) {
+          // Size mismatch short-circuits the expensive string comparison
+          if (entry1.size !== entry2.size) {
+            modified.push({
+              path,
+              mime: entry2.mime,
+              before: entry1.content,
+              after: entry2.content,
+            });
+          } else if (entry1.content !== entry2.content) {
             modified.push({
               path,
               mime: entry2.mime,

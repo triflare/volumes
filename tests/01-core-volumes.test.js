@@ -2318,7 +2318,7 @@ describe('triflareVolumes — snapshotDelta', () => {
     );
   });
 
-  it('size-short-circuit: reports unchanged files as not modified', async () => {
+  it('identical snapshots return empty delta arrays', async () => {
     // snap_a and snap_a are identical — nothing should be in any delta array
     const delta = JSON.parse(
       await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_a', VOL: 'delta_test://' })
@@ -2363,6 +2363,11 @@ describe('triflareVolumes — snapshotDelta', () => {
 // ===== ADVANCED BLOCK TOGGLE =====
 
 describe('triflareVolumes — advanced block toggle', () => {
+  beforeEach(() => {
+    extension._advancedBlocksHidden = true;
+    Scratch.vm.extensionManager._refreshBlocksCalls = 0;
+  });
+
   it('starts with advanced blocks hidden by default', () => {
     assert.equal(extension._advancedBlocksHidden, true);
     const info = extension.getInfo();
