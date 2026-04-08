@@ -2121,9 +2121,7 @@ describe('triflareVolumes — virtual archive (VArch)', () => {
   });
 
   it('listFiles returns files from a VARCH volume', async () => {
-    const files = JSON.parse(
-      await extension.listFiles({ DEPTH: 'immediate', PATH: 'arc1://' })
-    );
+    const files = JSON.parse(await extension.listFiles({ DEPTH: 'immediate', PATH: 'arc1://' }));
     assert.ok(files.includes('readme.txt'), 'should list readme.txt');
     assert.ok(files.includes('sub'), 'should list sub directory');
   });
@@ -2282,7 +2280,10 @@ describe('triflareVolumes — snapshotDelta', () => {
     const delta = JSON.parse(
       await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
     );
-    assert.ok(delta.added.some(e => e.path === 'b.txt'), 'b.txt should be in added');
+    assert.ok(
+      delta.added.some(e => e.path === 'b.txt'),
+      'b.txt should be in added'
+    );
     assert.ok(!delta.added.some(e => e.path === 'common.txt'), 'common.txt should not be added');
     assert.ok(!delta.added.some(e => e.path === 'a.txt'), 'a.txt should not be added');
   });
@@ -2291,22 +2292,25 @@ describe('triflareVolumes — snapshotDelta', () => {
     const delta = JSON.parse(
       await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
     );
-    assert.ok(delta.modified.some(e => e.path === 'common.txt'), 'common.txt should be modified');
+    assert.ok(
+      delta.modified.some(e => e.path === 'common.txt'),
+      'common.txt should be modified'
+    );
     assert.ok(
       !delta.modified.some(e => e.path === 'a.txt'),
       'deleted a.txt should not be in modified'
     );
-    assert.ok(
-      !delta.modified.some(e => e.path === 'b.txt'),
-      'new b.txt should not be in modified'
-    );
+    assert.ok(!delta.modified.some(e => e.path === 'b.txt'), 'new b.txt should not be in modified');
   });
 
   it('correctly identifies deleted paths', async () => {
     const delta = JSON.parse(
       await extension.snapshotDelta({ SNAP1: 'snap_a', SNAP2: 'snap_b', VOL: 'delta_test://' })
     );
-    assert.ok(delta.deleted.some(e => e.path === 'a.txt'), 'a.txt should be deleted');
+    assert.ok(
+      delta.deleted.some(e => e.path === 'a.txt'),
+      'a.txt should be deleted'
+    );
     assert.ok(!delta.deleted.some(e => e.path === 'b.txt'), 'new b.txt should not be deleted');
     assert.ok(
       !delta.deleted.some(e => e.path === 'common.txt'),
@@ -2332,7 +2336,11 @@ describe('triflareVolumes — snapshotDelta', () => {
     assert.equal(atob(modEntry.before), 'original', 'before should decode to original content');
     assert.equal(atob(modEntry.after), 'modified', 'after should decode to modified content');
     const delEntry = delta.deleted.find(e => e.path === 'a.txt');
-    assert.equal(atob(delEntry.content), 'will-be-deleted', 'deleted content should be recoverable');
+    assert.equal(
+      atob(delEntry.content),
+      'will-be-deleted',
+      'deleted content should be recoverable'
+    );
     const addEntry = delta.added.find(e => e.path === 'b.txt');
     assert.equal(atob(addEntry.content), 'brand-new', 'added content should be present');
   });
