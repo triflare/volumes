@@ -2372,6 +2372,7 @@ describe('triflareVolumes — advanced block toggle', () => {
   });
 
   it('toggleAdvancedBlocks reveals advanced blocks', () => {
+    const beforeCalls = Scratch.vm.extensionManager._refreshBlocksCalls || 0;
     extension.toggleAdvancedBlocks();
     assert.equal(extension._advancedBlocksHidden, false);
     const info = extension.getInfo();
@@ -2379,6 +2380,8 @@ describe('triflareVolumes — advanced block toggle', () => {
     assert.equal(txBlock.hideFromPalette, false, 'beginTransaction should be visible after toggle');
     const snapBlock = info.blocks.find(b => b.opcode === 'snapshotDelta');
     assert.equal(snapBlock.hideFromPalette, false, 'snapshotDelta should be visible after toggle');
+    const afterCalls = Scratch.vm.extensionManager._refreshBlocksCalls || 0;
+    assert.equal(afterCalls, beforeCalls + 1, 'refreshBlocks should be called once');
   });
 
   it('toggle button text reflects current state (visible → "Hide")', () => {
@@ -2388,10 +2391,13 @@ describe('triflareVolumes — advanced block toggle', () => {
   });
 
   it('toggleAdvancedBlocks hides blocks again on second call', () => {
+    const beforeCalls = Scratch.vm.extensionManager._refreshBlocksCalls || 0;
     extension.toggleAdvancedBlocks();
     assert.equal(extension._advancedBlocksHidden, true);
     const info = extension.getInfo();
     const txBlock = info.blocks.find(b => b.opcode === 'beginTransaction');
     assert.equal(txBlock.hideFromPalette, true, 'beginTransaction should be hidden again');
+    const afterCalls = Scratch.vm.extensionManager._refreshBlocksCalls || 0;
+    assert.equal(afterCalls, beforeCalls + 1, 'refreshBlocks should be called once');
   });
 });

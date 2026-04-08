@@ -39,6 +39,15 @@ export function createScratchMock() {
       NUMBER: 'number',
       STRING: 'string',
     },
+    vm: {
+      extensionManager: {
+        refreshBlocks() {
+          // Track calls for test assertions
+          if (!this._refreshBlocksCalls) this._refreshBlocksCalls = 0;
+          this._refreshBlocksCalls++;
+        },
+      },
+    },
   };
 }
 

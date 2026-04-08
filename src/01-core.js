@@ -1879,6 +1879,17 @@ class triflareVolumes {
       const target = args.VOL.trim();
       const exportObj = {};
 
+      // Check for VARCH volumes early
+      const volsToCheck =
+        target === 'all'
+          ? Object.keys(this.volumes)
+          : [target.endsWith('://') ? target : target + '://'];
+      for (const volName of volsToCheck) {
+        if (this.volumes[volName] && this.volumes[volName].type === 'VARCH') {
+          throw new Error('FORBIDDEN: operation not allowed on VARCH');
+        }
+      }
+
       const serializeRAMNode = node => {
         if (node.type === 'file') {
           return {
@@ -1986,6 +1997,10 @@ class triflareVolumes {
       for (const volName of volsToImport) {
         if (!data[volName]) {
           throw new Error(`NOT_FOUND: Volume ${volName} not found in import payload`);
+        }
+        // Check if target volume is VARCH (read-only archive)
+        if (this.volumes[volName] && this.volumes[volName].type === 'VARCH') {
+          throw new Error('FORBIDDEN: operation not allowed on VARCH');
         }
         const volData = data[volName];
 
@@ -2211,6 +2226,9 @@ class triflareVolumes {
       const volName = this._normalizeVolumeName(args.VOL);
       const txName = String(args.TXN || 'main').trim() || 'main';
       if (!this.volumes[volName]) throw new Error('NOT_FOUND: Volume not found');
+      if (this.volumes[volName].type === 'VARCH') {
+        throw new Error('FORBIDDEN: operation not allowed on VARCH');
+      }
       if (this._transactions.has(volName))
         throw new Error(`INVALID_ARGUMENT: Transaction already active on ${volName}`);
       const exportJson = await this.exportVolume({ VOL: volName });
@@ -2290,6 +2308,9 @@ class triflareVolumes {
       const snapName = String(args.SNAP || '').trim();
       if (!snapName) throw new Error('INVALID_ARGUMENT: Snapshot name is required');
       if (!this.volumes[volName]) throw new Error('NOT_FOUND: Volume not found');
+      if (this.volumes[volName].type === 'VARCH') {
+        throw new Error('FORBIDDEN: operation not allowed on VARCH');
+      }
       const exportJson = await this.exportVolume({ VOL: volName });
       const parsed = JSON.parse(exportJson);
       if (!parsed[volName]) throw new Error('INTERNAL_ERROR: Failed to capture snapshot');
