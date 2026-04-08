@@ -2142,6 +2142,9 @@ class triflareVolumes {
 
       if (vol.type === 'RAM') {
         if (relPath) this._traverseRAM(volName, relPath);
+      } else if (vol.type === 'VARCH') {
+        // VARCH volumes are read-only: control permission is always denied
+        throw new Error('FORBIDDEN: Volume is Read-Only');
       } else {
         if (relPath) await this._resolveOPFSNode(volName, relPath);
       }
@@ -2177,6 +2180,8 @@ class triflareVolumes {
         try {
           if (vol.type === 'RAM') {
             this._traverseRAM(volName, relPath);
+          } else if (vol.type === 'VARCH') {
+            this._traverseVARCH(volName, relPath);
           } else {
             await this._resolveOPFSNode(volName, relPath);
           }

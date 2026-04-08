@@ -25,6 +25,7 @@ export function createScratchMock() {
     translate: text => text,
     BlockType: {
       BOOLEAN: 'Boolean',
+      BUTTON: 'button',
       COMMAND: 'command',
       HAT: 'hat',
       LOOP: 'loop',
