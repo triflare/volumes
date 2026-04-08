@@ -457,18 +457,46 @@ class triflareVolumes {
   // --- Utility Functions ---
   _assertRuntimeSupport() {
     let unsupportedReason = '';
-    if (!this._supportsOPFS()) {
+
+    // Explicitly detect file:// and fail fast (common cause when opening local files)
+    try {
+      if (
+        typeof window !== 'undefined' &&
+        window.location &&
+        window.location.protocol === 'file:'
+      ) {
+        unsupportedReason =
+          'Volumes requires a secure context (HTTPS). It appears you are running from a file:// URI — serve the page over HTTPS or use localhost.';
+      }
+    } catch (_e) {
+      /* empty */
+    }
+
+    // Prefer to fail fast on insecure contexts (covers http: or other non-secure contexts)
+    if (
+      !unsupportedReason &&
+      typeof globalThis.isSecureContext === 'boolean' &&
+      !globalThis.isSecureContext
+    ) {
       unsupportedReason =
-        'Volumes requires OPFS support. This usually means running in an insecure or unsupported context.';
-    } else if (typeof globalThis.isSecureContext === 'boolean' && !globalThis.isSecureContext) {
-      unsupportedReason = 'Volumes requires a secure context (HTTPS).';
-    } else if (
+        'Volumes requires a secure context (HTTPS). Serve over HTTPS or use localhost.';
+    }
+
+    // Sandboxed frames cannot access required platform APIs
+    if (
+      !unsupportedReason &&
       typeof window !== 'undefined' &&
       window.frameElement &&
       typeof window.frameElement.hasAttribute === 'function' &&
       window.frameElement.hasAttribute('sandbox')
     ) {
       unsupportedReason = 'Volumes cannot run in a sandboxed frame.';
+    }
+
+    // Finally, verify OPFS support specifically
+    if (!unsupportedReason && !this._supportsOPFS()) {
+      unsupportedReason =
+        'Volumes requires OPFS support (navigator.storage.getDirectory). Your browser or platform may not support it.';
     }
 
     if (!unsupportedReason) return;
