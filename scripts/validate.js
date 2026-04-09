@@ -163,6 +163,10 @@ function extractClassMethods(sourceFiles) {
  * Validate that every block opcode has a corresponding class method and that
  * argument names are consistent between block text and the arguments declaration.
  *
+ * Methods may live in any source file (not necessarily the same file as the
+ * block definition), which supports splitting getInfo() and implementations
+ * across multiple files.
+ *
  * @param {string} [srcDir] - Source directory to scan (defaults to `../src`).
  * @returns {string[]} Array of error messages; empty means validation passed.
  */
@@ -171,15 +175,18 @@ export function validateOpcodeSignatures(srcDir = SRC_DIR) {
   const methodsByFile = extractClassMethods(sourceFiles);
   const errors = [];
 
-  for (const filePath of sourceFiles) {
-    const fileName = path.basename(filePath);
-    const fileMethods = methodsByFile.get(fileName) || new Set();
+  // Flatten all methods from all files into a single set for cross-file lookup
+  const allMethods = new Set();
+  for (const methods of methodsByFile.values()) {
+    for (const m of methods) allMethods.add(m);
+  }
 
+  for (const filePath of sourceFiles) {
     for (const block of parseBlockDefinitions(filePath)) {
       const { opcode, textArgs, argKeys, file } = block;
 
-      // 1. Every opcode must have a corresponding implementation method
-      if (!fileMethods.has(opcode)) {
+      // 1. Every opcode must have a corresponding implementation method (in any source file)
+      if (!allMethods.has(opcode)) {
         errors.push(
           `  ✗ [${file}] Block opcode '${opcode}' has no corresponding implementation method in the extension class.`
         );

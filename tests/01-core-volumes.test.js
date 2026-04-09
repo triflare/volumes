@@ -1,5 +1,5 @@
 /**
- * Extensive unit tests for triflareVolumes extension (src/01-core.js)
+ * Extensive unit tests for triflareVolumes extension (src/)
  *
  * Tests cover:
  * - Volume mounting and management
@@ -14,7 +14,13 @@
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { installScratchMock } from './helpers/mock-scratch.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SRC_DIR = path.join(__dirname, '../src');
 
 // Install the mock and capture the registered extension instance.
 const { mock, restore } = installScratchMock();
@@ -153,10 +159,17 @@ if (!globalThis.navigator.storage) {
   });
 }
 
-// Top-level await: load the core module so registration fires.
+// Top-level await: load all source modules in sorted order so the class
+// definition, helpers, and block implementations are all registered before tests run.
 let importError;
 try {
-  await import('../src/01-core.js');
+  const srcFiles = fs
+    .readdirSync(SRC_DIR)
+    .filter(f => f.endsWith('.js') && !f.startsWith('.'))
+    .sort();
+  for (const srcFile of srcFiles) {
+    await import(path.join(SRC_DIR, srcFile));
+  }
 } catch (e) {
   importError = e;
 } finally {
