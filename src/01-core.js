@@ -172,7 +172,10 @@ class tfVolumes {
         },
 
         // --- Permissions ---
-        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Permissions') },
+        {
+          blockType: Scratch.BlockType.LABEL,
+          text: Scratch.translate('Permissions'),
+        },
         {
           opcode: 'setPermission',
           blockType: Scratch.BlockType.COMMAND,
@@ -372,7 +375,10 @@ class tfVolumes {
         },
 
         // --- Diagnostics ---
-        { blockType: Scratch.BlockType.LABEL, text: Scratch.translate('Diagnostics') },
+        {
+          blockType: Scratch.BlockType.LABEL,
+          text: Scratch.translate('Diagnostics'),
+        },
         {
           opcode: 'getLastError',
           blockType: Scratch.BlockType.REPORTER,

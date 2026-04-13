@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/assets/icons/menu.svg" alt="Mint logo" width="75">
+  <img src="src/assets/icons/menu.svg" alt="Volumes logo" width="75">
 </p>
 
 <h1 align="center">

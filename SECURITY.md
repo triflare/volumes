@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-| Mint version          | Supported? |
+| Volumes version       | Supported? |
 | --------------------- | ---------- |
 | `1.x.x`               | &check;    |
 

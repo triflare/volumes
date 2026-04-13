@@ -9,6 +9,8 @@ RAM volumes are best for temporary data, scratch space, and tests. They are fast
 OPFS volumes are best when you want data to stay available after reloads. They rely on browser support for the Origin Private File System.
 Volumes now fails fast during initialization when OPFS is unavailable, the context is insecure, or it is running inside a sandboxed frame. In browser contexts where `alert()` is available, it also displays an alert message before failing.
 
+> Note: `fs://` is only initialized when OPFS support is available. If OPFS is missing or the runtime is unsupported, Volumes does not silently fall back to `tmp://`.
+
 ## Permissions
 
 Every path can have its own permissions.

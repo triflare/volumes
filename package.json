@@ -30,11 +30,11 @@
     "fullstack": "npm run format && npm run lint && npm run validate && npm run build && npm run test"
   },
   "keywords": [
+    "volumes",
+    "opfs",
     "turbowarp",
     "scratch",
     "extension",
-    "mint-tooling",
-    "extension-template",
     "turbowarp-extension"
   ],
   "author": "Triflare",
