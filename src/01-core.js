@@ -42,10 +42,19 @@ class tfVolumes {
     return {
       id: 'tfVolumes',
       name: Scratch.translate('Volumes'),
-      menuIconURI: mint.assets.get('icons/menu.png'),
+      menuIconURI: mint.assets.get('icons/menu.svg'),
       color1: '#638ccf',
       color2: '#4b73b2',
       blocks: [
+        // --- Advanced Block Toggle ---
+        {
+          blockType: Scratch.BlockType.BUTTON,
+          text: this._advancedBlocksHidden
+            ? Scratch.translate('Show Advanced Blocks')
+            : Scratch.translate('Hide Advanced Blocks'),
+          func: 'toggleAdvancedBlocks',
+        },
+
         {
           opcode: 'mountAs',
           blockType: Scratch.BlockType.COMMAND,
@@ -205,15 +214,6 @@ class tfVolumes {
             JSON: { type: Scratch.ArgumentType.STRING, defaultValue: '{}' },
             VOL: { type: Scratch.ArgumentType.STRING, defaultValue: 'tmp://' },
           },
-        },
-
-        // --- Advanced Block Toggle ---
-        {
-          blockType: Scratch.BlockType.BUTTON,
-          text: this._advancedBlocksHidden
-            ? Scratch.translate('Show Advanced Blocks ▼')
-            : Scratch.translate('Hide Advanced Blocks ▲'),
-          func: 'toggleAdvancedBlocks',
         },
 
         // --- Management (advanced) ---
