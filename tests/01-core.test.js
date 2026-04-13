@@ -138,7 +138,11 @@ class MockOPFSDirectory {
       throw err;
     }
 
-    if (existing.kind === 'directory' && this.entries.get(name).handle.entries.size > 0 && !options.recursive) {
+    if (
+      existing.kind === 'directory' &&
+      this.entries.get(name).handle.entries.size > 0 &&
+      !options.recursive
+    ) {
       throw new Error('DIRECTORY_NOT_EMPTY');
     }
 
@@ -206,7 +210,9 @@ describe('tfVolumes extension', () => {
     assert.ok(Array.isArray(info.blocks));
     assert.ok(info.blocks.some(block => block.opcode === 'mountAs'));
     assert.ok(info.blocks.some(block => block.opcode === 'mountArchive'));
-    const advancedLabel = info.blocks.find(block => block.blockType === 'label' && block.text === 'Management');
+    const advancedLabel = info.blocks.find(
+      block => block.blockType === 'label' && block.text === 'Management'
+    );
     assert.ok(advancedLabel);
     assert.equal(advancedLabel.hideFromPalette, true);
   });
@@ -214,7 +220,9 @@ describe('tfVolumes extension', () => {
   it('toggles advanced block visibility', () => {
     extension.toggleAdvancedBlocks();
     const info = extension.getInfo();
-    const advancedLabel = info.blocks.find(block => block.blockType === 'label' && block.text === 'Management');
+    const advancedLabel = info.blocks.find(
+      block => block.blockType === 'label' && block.text === 'Management'
+    );
     assert.equal(advancedLabel.hideFromPalette, false);
   });
 
@@ -231,17 +239,36 @@ describe('RAM volume operations', () => {
     assertSuccess(await extension.mountAs({ VOL: testVol, TYPE: 'RAM' }));
     assert.equal(JSON.parse(await extension.listVolumes()).includes(testVol), true);
 
-    assertSuccess(await extension.fileWrite({ MODE: 'write', STRING: 'hello', PATH: `${testVol}hello.txt` }));
-    assert.equal(await extension.fileRead({ PATH: `${testVol}hello.txt`, FORMAT: 'text' }), 'hello');
+    assertSuccess(
+      await extension.fileWrite({ MODE: 'write', STRING: 'hello', PATH: `${testVol}hello.txt` })
+    );
+    assert.equal(
+      await extension.fileRead({ PATH: `${testVol}hello.txt`, FORMAT: 'text' }),
+      'hello'
+    );
 
-    assertSuccess(await extension.fileWrite({ MODE: 'append', STRING: ' world', PATH: `${testVol}hello.txt` }));
-    assert.equal(await extension.fileRead({ PATH: `${testVol}hello.txt`, FORMAT: 'text' }), 'hello world');
+    assertSuccess(
+      await extension.fileWrite({ MODE: 'append', STRING: ' world', PATH: `${testVol}hello.txt` })
+    );
+    assert.equal(
+      await extension.fileRead({ PATH: `${testVol}hello.txt`, FORMAT: 'text' }),
+      'hello world'
+    );
 
-    assert.equal(await extension.pathCheck({ PATH: `${testVol}hello.txt`, CONDITION: 'exists' }), true);
-    assert.equal(await extension.pathCheck({ PATH: `${testVol}hello.txt`, CONDITION: 'is a directory' }), false);
+    assert.equal(
+      await extension.pathCheck({ PATH: `${testVol}hello.txt`, CONDITION: 'exists' }),
+      true
+    );
+    assert.equal(
+      await extension.pathCheck({ PATH: `${testVol}hello.txt`, CONDITION: 'is a directory' }),
+      false
+    );
 
     assertSuccess(await extension.deletePath({ PATH: `${testVol}hello.txt` }));
-    assert.equal(await extension.pathCheck({ PATH: `${testVol}hello.txt`, CONDITION: 'exists' }), false);
+    assert.equal(
+      await extension.pathCheck({ PATH: `${testVol}hello.txt`, CONDITION: 'exists' }),
+      false
+    );
   });
 
   it('creates nested directories, lists files recursively, and handles type mismatches', async () => {
@@ -250,22 +277,37 @@ describe('RAM volume operations', () => {
     const nestedFile = `${testVol}dir/sub/file.txt`;
     assertSuccess(await extension.fileWrite({ MODE: 'write', STRING: 'nested', PATH: nestedFile }));
 
-    const immediate = JSON.parse(await extension.listFiles({ DEPTH: 'immediate', PATH: `${testVol}dir` }));
+    const immediate = JSON.parse(
+      await extension.listFiles({ DEPTH: 'immediate', PATH: `${testVol}dir` })
+    );
     assert.deepEqual(immediate.sort(), ['sub']);
 
-    const recursive = JSON.parse(await extension.listFiles({ DEPTH: 'all', PATH: `${testVol}dir` }));
+    const recursive = JSON.parse(
+      await extension.listFiles({ DEPTH: 'all', PATH: `${testVol}dir` })
+    );
     assert.deepEqual(recursive.sort(), ['sub', 'sub/file.txt']);
 
-    assert.equal(await extension.pathCheck({ PATH: `${testVol}dir`, CONDITION: 'is a directory' }), true);
-    assert.equal(await extension.pathCheck({ PATH: `${testVol}dir/sub/file.txt`, CONDITION: 'exists' }), true);
+    assert.equal(
+      await extension.pathCheck({ PATH: `${testVol}dir`, CONDITION: 'is a directory' }),
+      true
+    );
+    assert.equal(
+      await extension.pathCheck({ PATH: `${testVol}dir/sub/file.txt`, CONDITION: 'exists' }),
+      true
+    );
   });
 
   it('supports data URI writes and returns correct text content', async () => {
     const testVol = `test-ram-${Date.now()}-${Math.floor(Math.random() * 10000)}://`;
     assertSuccess(await extension.mountAs({ VOL: testVol, TYPE: 'RAM' }));
     const dataUri = 'data:text/plain;base64,' + btoa('data-test');
-    assertSuccess(await extension.fileWrite({ MODE: 'write', STRING: dataUri, PATH: `${testVol}datatest.txt` }));
-    assert.equal(await extension.fileRead({ PATH: `${testVol}datatest.txt`, FORMAT: 'text' }), 'data-test');
+    assertSuccess(
+      await extension.fileWrite({ MODE: 'write', STRING: dataUri, PATH: `${testVol}datatest.txt` })
+    );
+    assert.equal(
+      await extension.fileRead({ PATH: `${testVol}datatest.txt`, FORMAT: 'text' }),
+      'data-test'
+    );
   });
 
   it('enforces file count and size limits', async () => {
@@ -274,10 +316,16 @@ describe('RAM volume operations', () => {
     assertSuccess(await extension.setFileCountLimit({ VOL: testVol, LIMIT: 2 }));
     assertSuccess(await extension.setSizeLimit({ VOL: testVol, LIMIT: 1024 }));
 
-    assertSuccess(await extension.fileWrite({ MODE: 'write', STRING: 'a', PATH: `${testVol}limit1.txt` }));
-    assertSuccess(await extension.fileWrite({ MODE: 'write', STRING: 'b', PATH: `${testVol}limit2.txt` }));
+    assertSuccess(
+      await extension.fileWrite({ MODE: 'write', STRING: 'a', PATH: `${testVol}limit1.txt` })
+    );
+    assertSuccess(
+      await extension.fileWrite({ MODE: 'write', STRING: 'b', PATH: `${testVol}limit2.txt` })
+    );
 
-    const limitError = JSON.parse(await extension.fileWrite({ MODE: 'write', STRING: 'c', PATH: `${testVol}limit3.txt` }));
+    const limitError = JSON.parse(
+      await extension.fileWrite({ MODE: 'write', STRING: 'c', PATH: `${testVol}limit3.txt` })
+    );
     assert.equal(limitError.status, 'error');
     assert.equal(limitError.code, 'QUOTA_EXCEEDED');
   });
@@ -286,13 +334,17 @@ describe('RAM volume operations', () => {
     const testVol = `test-ram-${Date.now()}-${Math.floor(Math.random() * 10000)}://`;
     assertSuccess(await extension.mountAs({ VOL: testVol, TYPE: 'RAM' }));
 
-    assertSuccess(await extension.fileWrite({ MODE: 'write', STRING: 'extra', PATH: `${testVol}keep.txt` }));
+    assertSuccess(
+      await extension.fileWrite({ MODE: 'write', STRING: 'extra', PATH: `${testVol}keep.txt` })
+    );
     const exportJson = await extension.exportVolume({ VOL: testVol });
     const exported = JSON.parse(exportJson);
     assert.ok(exported[testVol]);
     assert.equal(exported[testVol].type, 'RAM');
 
-    assertSuccess(await extension.fileWrite({ MODE: 'write', STRING: 'temp', PATH: `${testVol}temp.txt` }));
+    assertSuccess(
+      await extension.fileWrite({ MODE: 'write', STRING: 'temp', PATH: `${testVol}temp.txt` })
+    );
     assertSuccess(await extension.importVolume({ VOL: testVol, JSON: exportJson }));
     assert.equal(await extension.fileRead({ PATH: `${testVol}temp.txt`, FORMAT: 'text' }), '');
     assert.equal(await extension.fileRead({ PATH: `${testVol}keep.txt`, FORMAT: 'text' }), 'extra');
@@ -309,10 +361,17 @@ describe('permissions, snapshots, and transactions', () => {
 
   it('tracks permission changes and denies reads when expected', async () => {
     assertSuccess(await extension.mountAs({ VOL: volName, TYPE: 'RAM' }));
-    assertSuccess(await extension.fileWrite({ MODE: 'write', STRING: 'secret', PATH: `${volName}secret.txt` }));
+    assertSuccess(
+      await extension.fileWrite({ MODE: 'write', STRING: 'secret', PATH: `${volName}secret.txt` })
+    );
 
-    assertSuccess(await extension.setPermission({ PATH: `${volName}secret.txt`, PERM: 'read', VALUE: 'deny' }));
-    assert.equal(await extension.checkPermission({ PATH: `${volName}secret.txt`, PERM: 'read' }), false);
+    assertSuccess(
+      await extension.setPermission({ PATH: `${volName}secret.txt`, PERM: 'read', VALUE: 'deny' })
+    );
+    assert.equal(
+      await extension.checkPermission({ PATH: `${volName}secret.txt`, PERM: 'read' }),
+      false
+    );
 
     await extension.fileRead({ PATH: `${volName}secret.txt`, FORMAT: 'text' });
     const lastError = JSON.parse(extension.getLastError());
@@ -322,10 +381,14 @@ describe('permissions, snapshots, and transactions', () => {
   it('creates snapshots, restores them, and diffs snapshot states', async () => {
     const snapVol = `test-snap-${Date.now()}-${Math.floor(Math.random() * 10000)}://`;
     assertSuccess(await extension.mountAs({ VOL: snapVol, TYPE: 'RAM' }));
-    assertSuccess(await extension.fileWrite({ MODE: 'write', STRING: 'first', PATH: `${snapVol}file.txt` }));
+    assertSuccess(
+      await extension.fileWrite({ MODE: 'write', STRING: 'first', PATH: `${snapVol}file.txt` })
+    );
     assertSuccess(await extension.createSnapshot({ VOL: snapVol, SNAP: 'one' }));
 
-    assertSuccess(await extension.fileWrite({ MODE: 'write', STRING: 'second', PATH: `${snapVol}file.txt` }));
+    assertSuccess(
+      await extension.fileWrite({ MODE: 'write', STRING: 'second', PATH: `${snapVol}file.txt` })
+    );
     assertSuccess(await extension.createSnapshot({ VOL: snapVol, SNAP: 'two' }));
 
     const diff = JSON.parse(await extension.diffSnapshots({ VOL: snapVol, A: 'one', B: 'two' }));
@@ -381,8 +444,13 @@ describe('archive and watcher behaviors', () => {
       },
     };
 
-    assertSuccess(await extension.mountArchive({ VOL: 'archive://', JSON: JSON.stringify(archive) }));
-    assert.equal(await extension.fileRead({ PATH: 'archive://readme.txt', FORMAT: 'text' }), 'archive-content');
+    assertSuccess(
+      await extension.mountArchive({ VOL: 'archive://', JSON: JSON.stringify(archive) })
+    );
+    assert.equal(
+      await extension.fileRead({ PATH: 'archive://readme.txt', FORMAT: 'text' }),
+      'archive-content'
+    );
   });
 
   it('creates a watcher and polls events for a new file write', async () => {
@@ -391,9 +459,13 @@ describe('archive and watcher behaviors', () => {
     const watcherId = await extension.watchPath({ PATH: watchVol, DEPTH: 'immediate' });
     assert.ok(watcherId);
 
-    assertSuccess(await extension.fileWrite({ MODE: 'write', STRING: 'watch', PATH: `${watchVol}item.txt` }));
+    assertSuccess(
+      await extension.fileWrite({ MODE: 'write', STRING: 'watch', PATH: `${watchVol}item.txt` })
+    );
     const events = JSON.parse(await extension.pollWatcherEvents({ WATCHER: watcherId }));
-    assert.ok(events.some(event => event.relPath === 'item.txt' || event.path === `${watchVol}item.txt`));
+    assert.ok(
+      events.some(event => event.relPath === 'item.txt' || event.path === `${watchVol}item.txt`)
+    );
 
     assertSuccess(await extension.unwatchPath({ WATCHER: watcherId }));
   });
