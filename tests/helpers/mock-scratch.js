@@ -27,6 +27,7 @@ export function createScratchMock() {
       BOOLEAN: 'Boolean',
       COMMAND: 'command',
       HAT: 'hat',
+      LABEL: 'label',
       LOOP: 'loop',
       REPORTER: 'reporter',
     },
