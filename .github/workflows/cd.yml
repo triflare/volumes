@@ -1,0 +1,72 @@
+name: Continuous deployment
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Disable global permissions
+permissions: {}
+
+jobs:
+  release:
+    name: Release extension
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Minimum required to create releases
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Check if release already exists
+        id: release-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Use Node.js 20.x
+        if: steps.release-check.outputs.exists != 'true'
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.release-check.outputs.exists != 'true'
+        run: npm ci
+
+      - name: Build extension
+        if: steps.release-check.outputs.exists != 'true'
+        run: npm run build -- --sourcemap
+
+      - name: Verify output
+        if: steps.release-check.outputs.exists != 'true'
+        run: |
+          for asset in build/extension.js build/min.extension.js build/pretty.extension.js build/extension.js.map; do
+            if [ ! -f "$asset" ]; then
+              echo "::error::Build failed: ${asset} not found"
+              exit 1
+            fi
+          done
+
+      - name: Prepare release assets
+        if: steps.release-check.outputs.exists != 'true'
+        id: release-assets
+        run: node scripts/prepare-release-assets.js
+
+      - name: Create release and upload asset
+        if: steps.release-check.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "${{ steps.release-assets.outputs.pretty }}" \
+            "${{ steps.release-assets.outputs.min }}" \
+            "${{ steps.release-assets.outputs.sourcemap }}" \
+            --title "Release ${{ github.ref_name }}" \
+            --draft=false \
+            --generate-notes

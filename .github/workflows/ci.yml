@@ -1,0 +1,503 @@
+name: Continuous integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '2 2 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ------------------------------------------------------------------
+  # JOB 1: PR Compliance
+  # ------------------------------------------------------------------
+  pr-compliance:
+    name: Validate PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Check PR title
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const title = context.payload.pull_request.title;
+            const validPatterns = [
+              /^(feat|fix|docs|style|refactor|perf|test|chore)(\(.+\))?:/,
+              /^(Feature|Fix|Docs|Style|Refactor|Performance|Test|Chore):/,
+              /^(\d+\.)?\d+\.\d+/,
+            ];
+            if (!validPatterns.some(pattern => pattern.test(title))) {
+              core.warning(`PR title doesn't follow conventional commits: "${title}"`);
+            }
+
+      - name: Check PR description
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const body = context.payload.pull_request.body;
+            if (!body || body.trim().length === 0) {
+              core.warning('PR description is empty.');
+            }
+
+      - name: Check for commits
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const commits = await github.rest.pulls.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            if (commits.data.length === 0) core.setFailed('PR has no commits');
+
+  # ------------------------------------------------------------------
+  # JOB 2: Static Analysis (With Enhanced Documentation Logging)
+  # ------------------------------------------------------------------
+  static-analysis:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Check code formatting
+        run: npx prettier --check src/
+        continue-on-error: false
+
+      - name: Validate documentation & links
+        run: |
+          ERRORS=0
+          echo "--- Checking Markdown Syntax ---"
+          # Loop through markdown files
+          for file in *.md; do
+            if [ -f "$file" ]; then
+              # 'grep -o' gets every match; 'wc -l' counts them. 
+              # This prevents exit code 1 when matches are 0.
+              count=$(grep -o '```' "$file" | wc -l)
+              
+              if [ $((count % 2)) -ne 0 ]; then
+                echo "::error file=$file::Unclosed code block (found $count backticks). Ensure every opening \`\`\` has a closing \`\`\`."
+                ERRORS=$((ERRORS + 1))
+              else
+                echo "[PASS] $file ($count backticks)"
+              fi
+            fi
+          done
+
+          echo "--- Checking Required Files ---"
+          for file in README.md QUICKSTART.md CONTRIBUTING.md; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Required file missing: $file"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "[PASS] Found $file"
+            fi
+          done
+
+          if [ $ERRORS -ne 0 ]; then
+            echo "Documentation check failed with $ERRORS error(s)."
+            exit 1
+          fi
+
+  # ------------------------------------------------------------------
+  # JOB 3: Security Checks (With Warning Annotations)
+  # ------------------------------------------------------------------
+  security:
+    name: Security & quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Opt-in to CodeQL file coverage on PRs
+        run: echo "CODEQL_ACTION_FILE_COVERAGE_ON_PRS=true" >> $GITHUB_ENV
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13
+        with:
+          languages: javascript
+          queries: security-and-quality
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+      - name: Validate JSON files
+        run: |
+          for file in $(find src -name "*.json"); do
+            node -e "JSON.parse(require('fs').readFileSync('$file', 'utf8'))" || { echo "::error file=$file::Invalid JSON syntax"; exit 1; }
+          done
+
+      - name: Check for TODO/FIXME & console
+        run: |
+          # Use warnings so they appear in the PR 'Files Changed' summary
+          CONSOLE_LOGS=$(grep -r "console\." src/ --include="*.js" | grep -v "console.error\|console.warn" || true)
+          if [ ! -z "$CONSOLE_LOGS" ]; then
+            echo "::warning::Found non-standard console usage (log/info/debug). Consider removing before release."
+            echo "$CONSOLE_LOGS"
+          fi
+
+          TODOS=$(grep -rE "TODO|FIXME" src/ --include="*.js" || true)
+          if [ ! -z "$TODOS" ]; then
+            echo "::notice::Source contains TODO or FIXME markers."
+          fi
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13
+        with:
+          category: '/language:javascript'
+
+  # ------------------------------------------------------------------
+  # JOB 4: Build & Verify
+  # ------------------------------------------------------------------
+  build-and-test:
+    name: Build & verify
+    needs: [static-analysis]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate opcode signatures
+        run: node scripts/validate.js
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Verify build output
+        run: |
+          if [ ! -f build/extension.js ]; then 
+            echo "::error::Build artifact 'build/extension.js' was not created."
+            exit 1
+          fi
+          node -c build/extension.js
+
+      - name: Check extension structure (Regex)
+        run: |
+          node << 'EOF'
+          const fs = require('fs');
+          const content = fs.readFileSync('build/extension.js', 'utf8');
+          // Check for the full extension header structure as generated by build.js
+          const headerPattern = new RegExp(
+            [
+              '^// Name         :  .+$',
+              '^// ID           :  .+$',
+              '^// Description  :  .+$',
+              '^// By           :  .+$',
+              '^// License      :  .+$',
+              '^$',
+              '^// Version      :  .+$',
+              '^$',
+              '^// This file was generated by Mint, the new bundling toolchain for custom TurboWarp extensions\.$',
+              '^// It is not recommended to edit this file on your own\.$',
+              '^// Instead, edit it in this repository: .+$',
+              '^$',
+            ].join('\n'),
+            'm'
+          );
+          const checks = {
+            'Extension header structure': headerPattern,
+            'IIFE function': /\(function\s*\(\s*Scratch\s*\)/m,
+            'Registration': /Scratch\.extensions\.register/,
+          };
+          for (const [name, pattern] of Object.entries(checks)) {
+            if (!pattern.test(content)) {
+              console.error(`::error::Structural check failed: ${name} not found or incorrect in build output.`);
+              process.exit(1);
+            }
+          }
+          EOF
+
+      - name: Validate manifest (ID & version)
+        run: |
+          node <<'EOF'
+          const m = require('./src/manifest.json');
+          let failed = false;
+          // Check: ID must start with a letter and contain only letters, numbers, or underscores
+          if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(m.id)) {
+            console.error(`::error file=src/manifest.json::Invalid ID format: "${m.id}". Must start with a letter and contain only letters, numbers, or underscores.`);
+            failed = true;
+          }
+          if (!/^\d+\.\d+\.\d+/.test(m.version)) {
+            console.error(`::error file=src/manifest.json::Invalid version: "${m.version}". Use SemVer (e.g. 1.0.0).`);
+            failed = true;
+          }
+          if (failed) process.exit(1);
+          EOF
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: extension-${{ matrix.node-version }}
+          path: build/extension.js
+          retention-days: 7
+
+      - name: Comment PR with build report
+        if: github.event_name == 'pull_request' && matrix.node-version == '20.x'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs = require('fs');
+            const size = (fs.statSync('build/extension.js').size / 1024).toFixed(2);
+            const artifactUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `### Build report (Node ${{ matrix.node-version }})\n- **Status**: Success\n- **Bundle Size**: ${size} KB\n- **Verification**: Structure & Syntax Valid\n- **Artifact**: [Download artifact](${artifactUrl})`
+            });
+
+  # ------------------------------------------------------------------
+  # JOB 5: PR manifest version bump check
+  # ------------------------------------------------------------------
+  manifest-version-pr-check:
+    name: Enforce manifest version bump on PRs
+    needs: [build-and-test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Fail if src changes without manifest version bump
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const cp = require('child_process');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = context.payload.pull_request.number;
+            const baseSha = context.payload.pull_request.base.sha;
+            const headSha = context.payload.pull_request.head.sha;
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number,
+              per_page: 100
+            });
+            const changedFiles = files.flatMap(f => (
+              f.previous_filename ? [f.filename, f.previous_filename] : [f.filename]
+            ));
+            const srcChanged = changedFiles.some(f => f.startsWith('src/') && f !== 'src/manifest.json');
+            if (!srcChanged) {
+              core.info('No src/* changes outside src/manifest.json in this PR.');
+              return;
+            }
+            const readManifest = (rev) => {
+              try {
+                return JSON.parse(cp.execSync(`git show ${rev}:src/manifest.json`, { encoding: 'utf8' }));
+              } catch {
+                return null;
+              }
+            };
+            const previousVersion = readManifest(baseSha)?.version;
+            const currentVersion = readManifest(headSha)?.version;
+            if (!previousVersion || !currentVersion) {
+              core.setFailed('Unable to read src/manifest.json version from PR base/head commits.');
+              return;
+            }
+            if (previousVersion === currentVersion) {
+              core.setFailed(`src/* changed without a manifest version bump (still ${currentVersion}).`);
+              return;
+            }
+            core.info(`Manifest version bumped: ${previousVersion} -> ${currentVersion}`);
+
+  # ------------------------------------------------------------------
+  # JOB 6: Auto-release on main when manifest changes
+  # ------------------------------------------------------------------
+  release-on-manifest-change:
+    name: Auto release on manifest change
+    needs: [build-and-test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Detect release eligibility
+        id: release-meta
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs = require('fs');
+            const cp = require('child_process');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const after = process.env.GITHUB_SHA;
+            let before = context.payload.before;
+            let changed = '';
+            const primaryBaseRef = before && !/^0+$/.test(before) ? before : `${after}~1`;
+            try {
+              changed = cp.execSync(`git diff --name-only ${primaryBaseRef}..${after}`, { encoding: 'utf8' }).trim();
+            } catch (err) {
+              console.error(`Primary git diff failed (baseRef=${primaryBaseRef}, before=${before}, after=${after}):`, err && err.stack ? err.stack : err);
+              try {
+                const fallbackBaseRef = `${after}~1`;
+                changed = cp.execSync(`git diff --name-only ${fallbackBaseRef}..${after}`, { encoding: 'utf8' }).trim();
+              } catch (err2) {
+                console.error(`Fallback git diff failed (after=${after}~1..${after}):`, err2 && err2.stack ? err2.stack : err2);
+                changed = '';
+              }
+            }
+            const files = changed ? changed.split(/\r?\n/).filter(Boolean) : [];
+            const manifestChanged = files.includes('src/manifest.json');
+            if (!manifestChanged) {
+              core.info('src/manifest.json was not changed in this push.');
+              core.setOutput('should_release', 'false');
+              return;
+            }
+            const manifest = JSON.parse(fs.readFileSync('src/manifest.json', 'utf8'));
+            const rawVersion = manifest.version;
+            if (rawVersion === undefined || rawVersion === null || `${rawVersion}`.trim() === '') {
+              core.setFailed('src/manifest.json version is missing or empty.');
+              return;
+            }
+            const version = `${rawVersion}`.trim();
+            const tag = version.startsWith('v') ? version : `v${version}`;
+            core.setOutput('tag', tag);
+            try {
+              await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              core.info(`Release ${tag} already exists.`);
+              core.setOutput('should_release', 'false');
+            } catch (error) {
+              if (error.status === 404) {
+                core.info(`Release ${tag} does not exist and will be created.`);
+                core.setOutput('should_release', 'true');
+                return;
+              }
+              throw error;
+            }
+
+      - name: Use Node.js 20.x
+        if: steps.release-meta.outputs.should_release == 'true'
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.release-meta.outputs.should_release == 'true'
+        run: npm ci
+
+      - name: Build extension
+        if: steps.release-meta.outputs.should_release == 'true'
+        run: npm run build -- --sourcemap
+
+      - name: Verify output
+        if: steps.release-meta.outputs.should_release == 'true'
+        run: |
+          for asset in build/extension.js build/min.extension.js build/pretty.extension.js build/extension.js.map; do
+            if [ ! -f "$asset" ]; then
+              echo "::error::Build failed: ${asset} not found"
+              exit 1
+            fi
+          done
+
+      - name: Prepare release assets
+        if: steps.release-meta.outputs.should_release == 'true'
+        id: release-assets
+        run: node scripts/prepare-release-assets.js
+
+      - name: Create release and upload assets
+        if: steps.release-meta.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.release-meta.outputs.tag }}" \
+            "${{ steps.release-assets.outputs.pretty }}" \
+            "${{ steps.release-assets.outputs.min }}" \
+            "${{ steps.release-assets.outputs.sourcemap }}" \
+            --title "Release ${{ steps.release-meta.outputs.tag }}" \
+            --draft=false \
+            --generate-notes
+
+  # ------------------------------------------------------------------
+  # JOB 7: Dependabot Auto-Approve
+  # ------------------------------------------------------------------
+  dependabot-approve:
+    name: Dependabot auto-approve
+    # Only run if previous jobs passed AND the actor is dependabot
+    needs: [static-analysis, security, build-and-test]
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@ffa630c65fa7e0ecfa0625b5ceda64399aea1b36 # v3.0.0
+        with:
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
+
+      - name: Approve and enable auto-merge
+        # Checks if the update is a major version bump. If it is, we skip auto-approving to allow for manual review.
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: |
+          set -e
+          gh pr review --approve "$PR_URL"
+          gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
