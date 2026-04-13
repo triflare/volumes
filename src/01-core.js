@@ -1,4 +1,4 @@
-class triflareVolumes {
+class tfVolumes {
   constructor() {
     this._assertRuntimeSupport();
     this.volumes = {};
@@ -40,11 +40,11 @@ class triflareVolumes {
 
   getInfo() {
     return {
-      id: 'triflareVolumes',
+      id: 'tfVolumes',
       name: Scratch.translate('Volumes'),
       menuIconURI: mint.assets.get('icons/menu.png'),
-      color1: '#63cf7a',
-      color2: '#42bd5b',
+      color1: '#638ccf',
+      color2: '#4b73b2',
       blocks: [
         {
           opcode: 'mountAs',
@@ -2899,4 +2899,4 @@ class triflareVolumes {
   }
 }
 
-Scratch.extensions.register(new triflareVolumes());
+Scratch.extensions.register(new tfVolumes());

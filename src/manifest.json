@@ -1,8 +1,8 @@
 {
-  "name": "CobaltVDisk",
-  "id": "tfCobaltvdisk",
+  "name": "Volumes",
+  "id": "tfVolumes",
   "version": "1.0.0",
-  "description": "CobaltVDIsk is a POSIX-compatible custom file system for TurboWarp & other Scratch mods.",
+  "description": "Volumes is a POSIX-compatible custom file system for TurboWarp & other Scratch mods.",
   "author": "Triflare",
   "license": "GPL-3.0-only",
   "url": "https://github.com/triflare/cobaltvdisk"
