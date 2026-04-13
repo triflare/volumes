@@ -61,7 +61,7 @@ class CobaltVDisk {
         {
           opcode: 'writeFile',
           blockType: Scratch.BlockType.COMMAND,
-          text: Scratch.translate('append/write [DATA] to file at path [PATH] as [MODE]'),
+          text: Scratch.translate('write [DATA] to file at path [PATH] in [MODE] mode'),
           arguments: {
             DATA: {
               type: Scratch.ArgumentType.STRING,
@@ -165,7 +165,7 @@ class CobaltVDisk {
       });
       await this._saveMetadata();
     } catch {
-      // Ignore command errors in Scratch command blocks.
+      // Scratch command blocks should fail silently for user-triggered filesystem errors.
     }
   }
 
@@ -202,7 +202,7 @@ class CobaltVDisk {
       });
       await this._saveMetadata();
     } catch {
-      // Ignore command errors in Scratch command blocks.
+      // Scratch command blocks should fail silently for user-triggered filesystem errors.
     }
   }
 
@@ -217,7 +217,7 @@ class CobaltVDisk {
       this._removeMetadata(path);
       await this._saveMetadata();
     } catch {
-      // Ignore command errors in Scratch command blocks.
+      // Scratch command blocks should fail silently for user-triggered filesystem errors.
     }
   }
 
@@ -235,7 +235,7 @@ class CobaltVDisk {
       });
       await this._saveMetadata();
     } catch {
-      // Ignore command errors in Scratch command blocks.
+      // Scratch command blocks should fail silently for user-triggered filesystem errors.
     }
   }
 
@@ -367,6 +367,13 @@ class CobaltVDisk {
       return [];
     }
     return path.split('/').filter(Boolean);
+  }
+
+  _resolveParentDirectoryPath(path) {
+    if (path === '/') {
+      return '/';
+    }
+    return this._parentPath(path) || '/';
   }
 
   async _loadMetadata() {
@@ -529,9 +536,9 @@ class CobaltVDisk {
       return;
     }
 
-    const parentPath = this._parentPath(path);
+    const parentPath = this._resolveParentDirectoryPath(path);
     const fileName = this._baseName(path);
-    const parentDirectory = await this._getOpfsDirectory(path === '/' ? '/' : parentPath);
+    const parentDirectory = await this._getOpfsDirectory(parentPath);
     const fileHandle = await parentDirectory.getFileHandle(fileName, { create: true });
     const currentFile = await fileHandle.getFile();
     const writable = await fileHandle.createWritable();
@@ -556,9 +563,9 @@ class CobaltVDisk {
       return node.content;
     }
 
-    const parentPath = this._parentPath(path);
+    const parentPath = this._resolveParentDirectoryPath(path);
     const fileName = this._baseName(path);
-    const parentDirectory = await this._getOpfsDirectory(path === '/' ? '/' : parentPath);
+    const parentDirectory = await this._getOpfsDirectory(parentPath);
     const fileHandle = await parentDirectory.getFileHandle(fileName);
     const file = await fileHandle.getFile();
     return await file.text();
@@ -574,9 +581,9 @@ class CobaltVDisk {
       return;
     }
 
-    const parentPath = this._parentPath(path);
+    const parentPath = this._resolveParentDirectoryPath(path);
     const name = this._baseName(path);
-    const parentDirectory = await this._getOpfsDirectory(path === '/' ? '/' : parentPath);
+    const parentDirectory = await this._getOpfsDirectory(parentPath);
     await parentDirectory.removeEntry(name, { recursive: true });
   }
 
@@ -609,9 +616,9 @@ class CobaltVDisk {
       return node.content.length;
     }
 
-    const parentPath = this._parentPath(path);
+    const parentPath = this._resolveParentDirectoryPath(path);
     const fileName = this._baseName(path);
-    const parentDirectory = await this._getOpfsDirectory(path === '/' ? '/' : parentPath);
+    const parentDirectory = await this._getOpfsDirectory(parentPath);
     const fileHandle = await parentDirectory.getFileHandle(fileName);
     const file = await fileHandle.getFile();
     return file.size;
@@ -627,9 +634,9 @@ class CobaltVDisk {
     }
 
     try {
-      const parentPath = this._parentPath(path);
+      const parentPath = this._resolveParentDirectoryPath(path);
       const name = this._baseName(path);
-      const parentDirectory = await this._getOpfsDirectory(path === '/' ? '/' : parentPath);
+      const parentDirectory = await this._getOpfsDirectory(parentPath);
       try {
         await parentDirectory.getFileHandle(name);
         return true;
