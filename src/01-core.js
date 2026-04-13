@@ -483,7 +483,7 @@ class CobaltVDisk {
           node = existing;
           continue;
         }
-        if (!createParents && builtPath !== path) {
+        if (!createParents) {
           throw new Error('Parent directory missing');
         }
         node.children[segment] = this._createMemoryDirectoryNode();
@@ -501,9 +501,8 @@ class CobaltVDisk {
     let builtPath = '';
     for (let index = 0; index < segments.length; index += 1) {
       const segment = segments[index];
-      const isLeaf = index === segments.length - 1;
       builtPath = `${builtPath}/${segment}`;
-      const allowCreate = createParents || isLeaf;
+      const allowCreate = createParents;
       directory = await directory.getDirectoryHandle(segment, { create: allowCreate });
       this._setMetadata(builtPath, {
         type: 'directory',
@@ -592,7 +591,6 @@ class CobaltVDisk {
 
     const directory = await this._getOpfsDirectory(path);
     const result = [];
-    // eslint-disable-next-line no-restricted-syntax
     for await (const [name] of directory.entries()) {
       if (name !== this.metadataFile) {
         result.push(name);
