@@ -1,37 +1,34 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="Mint logo" width="75">
+  <img src="src/assets/icons/menu.svg" alt="Mint logo" width="75">
 </p>
 
 <h1 align="center">
-  Mint Tooling
+  Volumes
 </h1>
 
 <p align="center">
-  <a href="https://github.com/triflare/mint-tooling/actions/workflows/ci.yml">
-    <img src="https://github.com/triflare/mint-tooling/actions/workflows/ci.yml/badge.svg" alt="Continuous integration">
+  <a href="https://github.com/triflare/volumes/actions/workflows/ci.yml">
+    <img src="https://github.com/triflare/volumes/actions/workflows/ci.yml/badge.svg" alt="Continuous integration">
   </a>
-    <a href="https://github.com/triflare/mint-tooling/actions/workflows/cd.yml">
-    <img src="https://github.com/triflare/mint-tooling/actions/workflows/cd.yml/badge.svg" alt="Continuous deployment">
+    <a href="https://github.com/triflare/volumes/actions/workflows/cd.yml">
+    <img src="https://github.com/triflare/volumes/actions/workflows/cd.yml/badge.svg" alt="Continuous deployment">
   </a>
 </p>
 
-## Introduction
+Volumes is an OPFS-powered custom extension for TurboWarp and other Scratch mods that allows you to use a custom, virtual file system in your projects.
 
-> A simple and painless custom TurboWarp extension development platform, powered by bundling.
+Imagine if Windows and Linux's file systems had a date, talked about their advantages and disadvantages, and eventually had a baby. **That baby will be Volumes.**
 
-Have you ever tried to contribute to a custom TurboWarp extension, but got overwhelmed by the pure size of the file? Mint's mission is to fix this issue.
+## Primary features
 
-With a bundling solution powered by Node.js, you can now build custom TurboWarp extensions modularly! With the power of JS modules, you can build a custom TurboWarp extension without even touching the 1,000 lines of code you would have had to use if you were to develop it normally.
+- **Based on Mint:** Volumes' source code uses the Mint tooling, meaning it'll be rock-hard and easy to maintain in the future.
+- **OPFS-powered:** Not only does this mean Volumes will be stable, it will also be secure. OPFS file systems can only be accessed in the domain they are created in!
+- **Persistent:** Whatever changes you make to an OPFS volume _(like the `fs://` volume you start out with)_ will stay after a reload. However, temporary volumes _(like the `tmp://` volume you also start with)_ do not.
 
-The only monolith you'll ever have to even see is the build output!
+## Documentation
 
-## Key Features
+If you want a more practical guide, start with the docs in [docs/toc.md](docs/toc.md).
 
-- **Bundling:** Powered by Node.js, you don't have to edit a huge file just to make a small patch to your custom extension. You can simply edit the file where the logic is held!
-- **In-repo documentation:** A separate documentation repository isn't required &mdash; just edit the `/docs/` folder, and link to that in your extension _(just remember to make it a URL and not a file path)_.
-- **Extensive CI/CD:** One of Mint's main features is automation &mdash; you get CodeQL, Dependabot, auto PR checking, and more right out of the box when you use Mint as your toolchain.
-- **Template gallery:** Start quickly with extension templates for common patterns in [`templates/`](./templates/README.md).
-
-## Quick Start
-
-If you copied this repository as your project template, follow [SETUP.MD](./SETUP.MD).
+- [Using Volumes](docs/using-volumes.md)
+- [Block Reference](docs/reference.md)
+- [Advanced Notes](docs/advanced.md)
