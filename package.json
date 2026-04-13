@@ -1,8 +1,8 @@
 {
   "type": "module",
-  "name": "@triflare/cobaltvdisk",
+  "name": "@triflare/volumes",
   "version": "1.0.0",
-  "description": "CobaltVDIsk is a POSIX-compatible custom file system for TurboWarp & other Scratch mods.",
+  "description": "Volumes is a POSIX-compatible custom file system for TurboWarp & other Scratch mods.",
   "main": "build/extension.js",
   "scripts": {
     "build": "node scripts/build.js",
