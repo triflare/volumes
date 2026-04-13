@@ -127,12 +127,13 @@ describe('enhanced build report', () => {
 
       const report = fs.readFileSync(path.join(tempDir, 'build', 'BUILD_REPORT.md'), 'utf8');
 
-      // The default template includes icons/block.png and icons/menu.png in src/assets/
+      // The repository includes embedded assets under src/assets/, so the report
+      // should list a MIME type for at least one asset.
       assert.ok(
         report.includes('## Embedded Assets'),
         'report should include Embedded Assets section when assets are present'
       );
-      assert.ok(report.includes('image/png'), 'Embedded Assets table should list MIME types');
+      assert.ok(/image\/[a-z+]+/.test(report), 'Embedded Assets table should list MIME types');
       assert.ok(
         report.includes('**Embedded assets:**'),
         'Summary should include embedded asset count'

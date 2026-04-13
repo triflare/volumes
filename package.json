@@ -1,8 +1,8 @@
 {
   "type": "module",
-  "name": "@triflare/mint-tooling",
-  "version": "2.2.1",
-  "description": "A simple and painless custom TurboWarp extension development platform, powered by bundling.",
+  "name": "@triflare/volumes",
+  "version": "1.0.0",
+  "description": "Volumes is a POSIX-compatible custom file system for TurboWarp & other Scratch mods.",
   "main": "build/extension.js",
   "scripts": {
     "build": "node scripts/build.js",
@@ -30,14 +30,14 @@
     "fullstack": "npm run format && npm run lint && npm run validate && npm run build && npm run test"
   },
   "keywords": [
+    "volumes",
+    "opfs",
     "turbowarp",
     "scratch",
     "extension",
-    "mint-tooling",
-    "extension-template",
     "turbowarp-extension"
   ],
-  "author": "",
+  "author": "Triflare",
   "license": "SEE LICENSE IN LICENSE",
   "devDependencies": {
     "@eslint/js": "^10.0.0",
