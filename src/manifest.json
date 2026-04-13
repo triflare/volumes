@@ -1,9 +1,9 @@
 {
-  "name": "My TurboWarp Extension",
-  "id": "myTurboWarpExtension",
-  "version": "1.1.2",
-  "description": "A custom extension for TurboWarp",
-  "author": "Your Name",
+  "name": "CobaltVDisk",
+  "id": "cobaltVDisk",
+  "version": "1.0.0",
+  "description": "A TurboWarp extension that provides an OPFS-backed virtual disk",
+  "author": "triflare",
   "license": "LSL-1.0",
-  "url": "https://example.com/my-extension"
+  "url": "https://github.com/triflare/cobaltvdisk"
 }

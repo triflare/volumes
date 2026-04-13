@@ -1,80 +1,78 @@
-/**
- * Unit tests for src/01-core.js (TurboWarpExtension class)
- *
- * The Scratch global mock must be installed before the core module is imported,
- * because 01-core.js calls Scratch.extensions.register() at module load time.
- * The mock captures the registered instance so the class methods can be tested.
- */
-
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { installScratchMock } from './helpers/mock-scratch.js';
 
-// Install the mock and capture the registered extension instance.
 const { mock } = installScratchMock();
 let extension;
 mock.extensions.register = instance => {
   extension = instance;
 };
 
-// Top-level await: load the core module so registration fires.
 await import('../src/01-core.js');
 
-describe('TurboWarpExtension — registration', () => {
+describe('CobaltVDisk — registration', () => {
   it('registers an extension instance with Scratch', () => {
     assert.ok(extension, 'Scratch.extensions.register should have been called');
   });
 });
 
-describe('TurboWarpExtension — helloWorld()', () => {
-  it('returns "hello world!"', () => {
-    assert.equal(extension.helloWorld(), 'hello world!');
-  });
-});
-
-describe('TurboWarpExtension — add()', () => {
-  it('adds two numbers', () => {
-    assert.equal(extension.add({ A: 3, B: 4 }), 7);
-  });
-
-  it('coerces string arguments to numbers', () => {
-    assert.equal(extension.add({ A: '5', B: '2' }), 7);
-  });
-
-  it('adds 0 + 1 = 1', () => {
-    assert.equal(extension.add({ A: 0, B: 1 }), 1);
-  });
-});
-
-describe('TurboWarpExtension — sayHello()', () => {
-  it('delegates to sayHelloImpl and returns a greeting', () => {
-    assert.equal(extension.sayHello({ NAME: 'World' }), 'Hello, World!');
-  });
-});
-
-describe('TurboWarpExtension — colorBlock()', () => {
-  it('returns the selected color string', () => {
-    assert.equal(extension.colorBlock({ COLOR: '#FF0000' }), 'Selected color: #FF0000');
-  });
-});
-
-describe('TurboWarpExtension — getInfo()', () => {
-  it('returns an object with an id and name', () => {
+describe('CobaltVDisk — getInfo()', () => {
+  it('returns extension metadata and blue block colors', () => {
     const info = extension.getInfo();
-    assert.equal(typeof info.id, 'string');
-    assert.equal(typeof info.name, 'string');
+    assert.equal(info.id, 'cobaltVDisk');
+    assert.equal(info.name, 'CobaltVDisk');
+    assert.equal(info.color1, '#007BFF');
   });
 
-  it('exposes a non-empty blocks array', () => {
-    const { blocks } = extension.getInfo();
-    assert.ok(Array.isArray(blocks) && blocks.length > 0, 'blocks should be a non-empty array');
-  });
-
-  it('declares all expected block opcodes', () => {
+  it('declares all required opcodes', () => {
     const opcodes = extension.getInfo().blocks.map(b => b.opcode);
-    assert.ok(opcodes.includes('helloWorld'), 'missing opcode: helloWorld');
-    assert.ok(opcodes.includes('add'), 'missing opcode: add');
-    assert.ok(opcodes.includes('colorBlock'), 'missing opcode: colorBlock');
-    assert.ok(opcodes.includes('sayHello'), 'missing opcode: sayHello');
+    assert.ok(opcodes.includes('mountVDisk'), 'missing opcode: mountVDisk');
+    assert.ok(opcodes.includes('createFile'), 'missing opcode: createFile');
+    assert.ok(opcodes.includes('readFile'), 'missing opcode: readFile');
+    assert.ok(opcodes.includes('writeFile'), 'missing opcode: writeFile');
+    assert.ok(opcodes.includes('removePath'), 'missing opcode: removePath');
+    assert.ok(opcodes.includes('createDirectory'), 'missing opcode: createDirectory');
+    assert.ok(opcodes.includes('listContents'), 'missing opcode: listContents');
+    assert.ok(opcodes.includes('getFileSize'), 'missing opcode: getFileSize');
+    assert.ok(opcodes.includes('pathExists'), 'missing opcode: pathExists');
+  });
+});
+
+describe('CobaltVDisk — async VFS operations', () => {
+  it('mounts and supports CRUD plus metadata operations', async () => {
+    await extension.mountVDisk();
+    await extension.createDirectory({ PATH: '/home/user' });
+    await extension.createFile({ PATH: '/home/user/file.txt', DATA: 'hello' });
+
+    assert.equal(await extension.readFile({ PATH: '/home/user/file.txt' }), 'hello');
+
+    await extension.writeFile({ PATH: '/home/user/file.txt', DATA: ' world', MODE: 'append' });
+    assert.equal(await extension.readFile({ PATH: '/home/user/file.txt' }), 'hello world');
+
+    await extension.writeFile({ PATH: '/home/user/file.txt', DATA: 'reset', MODE: 'write' });
+    assert.equal(await extension.readFile({ PATH: '/home/user/file.txt' }), 'reset');
+    assert.equal(await extension.getFileSize({ PATH: '/home/user/file.txt' }), 5);
+    assert.equal(await extension.pathExists({ PATH: '/home/user/file.txt' }), true);
+
+    const listed = JSON.parse(await extension.listContents({ PATH: '/home/user' }));
+    assert.deepEqual(listed, ['file.txt']);
+
+    await extension.removePath({ PATH: '/home/user/file.txt' });
+    assert.equal(await extension.readFile({ PATH: '/home/user/file.txt' }), '');
+    assert.equal(await extension.pathExists({ PATH: '/home/user/file.txt' }), false);
+  });
+
+  it('normalizes relative paths and dot segments', async () => {
+    await extension.createDirectory({ PATH: '/data/docs' });
+    await extension.createFile({ PATH: 'data/docs/./note.txt', DATA: 'text' });
+    assert.equal(await extension.readFile({ PATH: '/data/docs/../docs/note.txt' }), 'text');
+  });
+
+  it('handles missing paths gracefully', async () => {
+    await extension.createFile({ PATH: '/missing-parent/file.txt', DATA: 'x' });
+    assert.equal(await extension.readFile({ PATH: '/missing-parent/file.txt' }), '');
+    assert.equal(await extension.getFileSize({ PATH: '/missing-parent/file.txt' }), 0);
+    assert.equal(await extension.pathExists({ PATH: '/missing-parent/file.txt' }), false);
+    assert.equal(await extension.listContents({ PATH: '/missing-parent' }), '');
   });
 });
