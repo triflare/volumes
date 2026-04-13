@@ -1,8 +1,6 @@
-# Contributing to Mint
+# Contributing to Volumes
 
-> [!INFO]
->
-> If you're reading this and you've just forked this repository, you may want to replace all mentions of the Mint toolchain with your extension's name.
+> **Note:** "Mint" is Volumes' toolchain. If you see Mint being referenced, that's what it means.
 
 ## What You'll Need
 
@@ -101,7 +99,7 @@ npm run test:watch
 
 Place your test files in the `tests/` directory using the `.test.js` suffix:
 
-```
+```text
 tests/
   helpers/
     mock-scratch.js   # Scratch environment mock (provided)
