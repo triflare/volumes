@@ -141,7 +141,7 @@ jobs:
         run: echo "CODEQL_ACTION_FILE_COVERAGE_ON_PRS=true" >> $GITHUB_ENV
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13
+        uses: github/codeql-action/init@95e58e9a2cdfd71adc6e0353d5c52f41a045d225
         with:
           languages: javascript
           queries: security-and-quality
@@ -180,7 +180,7 @@ jobs:
           fi
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13
+        uses: github/codeql-action/analyze@95e58e9a2cdfd71adc6e0353d5c52f41a045d225
         with:
           category: '/language:javascript'
 
